@@ -238,7 +238,7 @@ test("toggles live TPS from the Footer tab", async () => {
 
 	settings.component.handleInput("\t");
 	settings.component.handleInput("\t");
-	for (let i = 0; i < 10; i++) settings.component.handleInput("\x1b[B");
+	for (let i = 0; i < 11; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Live TPS/);
 
 	settings.component.handleInput("\r");
@@ -287,8 +287,8 @@ test("supports localized settings and keyboard shortcuts", async () => {
 
 test("configures inline footer from General settings", async () => {
 	const settings = await openSettings();
-	// Enabled → Header → Language → Thinking peek → Footer in editor border
-	for (let i = 0; i < 4; i++) settings.component.handleInput("\x1b[B");
+	// Enabled → Header → Language → Thinking peek → Hide thinking label → Footer in editor border
+	for (let i = 0; i < 5; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Footer in editor border/);
 	settings.component.handleInput(" ");
 	assert.equal(settings.getConfig().inlineFooter, true);
@@ -297,8 +297,8 @@ test("configures inline footer from General settings", async () => {
 test("toggles copy buttons from General settings", async () => {
 	const settings = await openSettings();
 	assert.equal(settings.getConfig().copyButtons, true);
-	// Enabled → Header → Language → Thinking peek → Footer in editor border → Copy buttons
-	for (let i = 0; i < 5; i++) settings.component.handleInput("\x1b[B");
+	// … → Hide thinking label → Footer in editor border → Copy buttons
+	for (let i = 0; i < 6; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Copy buttons/);
 	settings.component.handleInput(" ");
 	assert.equal(settings.getConfig().copyButtons, false);
@@ -329,6 +329,7 @@ test("toggles the header without resetting a disabled slot and warns when persis
 			ui: {
 				setFooter() {},
 				setEditorComponent() {},
+				setHiddenThinkingLabel() {},
 				setHeader: (factory: unknown) => headers.push(factory),
 				notify: (message: string, level: string) => notifications.push({ message, level }),
 				custom: (factory: (tui: TUI, theme: Theme) => SettingsComponent) =>
@@ -373,11 +374,47 @@ test("configures the hostname footer segment", async () => {
 	assert.match(selectedLine(settings.component), /Hostname/);
 });
 
+test("cycles the context display between bar and numbers", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\x1b[C");
+	settings.component.handleInput("\x1b[C");
+	for (let i = 0; i < 8; i++) settings.component.handleInput("\x1b[B");
+	assert.match(selectedLine(settings.component), /Context display/);
+	assert.match(selectedLine(settings.component), /Context display\s+Bar/);
+
+	settings.component.handleInput(" ");
+	assert.equal(settings.getConfig().contextStyle, "numbers");
+	assert.match(selectedLine(settings.component), /Context display\s+Numbers/);
+
+	settings.component.handleInput(" ");
+	assert.equal(settings.getConfig().contextStyle, "bar");
+});
+
+test("blanks the collapsed thinking label", async () => {
+	const settings = await openSettings();
+	for (let i = 0; i < 4; i++) settings.component.handleInput("\x1b[B");
+	assert.match(selectedLine(settings.component), /Hide thinking label/);
+	assert.equal(settings.getConfig().hideThinkingLabel, true);
+
+	settings.component.handleInput(" ");
+	assert.equal(settings.getConfig().hideThinkingLabel, false);
+});
+
+test("toggles the compact tool status bar", async () => {
+	const settings = await openSettings();
+	for (let i = 0; i < 8; i++) settings.component.handleInput("\x1b[B");
+	assert.match(selectedLine(settings.component), /Tool status bar\s+On/);
+
+	settings.component.handleInput(" ");
+	assert.equal(settings.getConfig().toolView.bar, false);
+
+});
+
 test("configures the extension status line with Space", async () => {
 	const settings = await openSettings();
 	settings.component.handleInput("\x1b[C");
 	settings.component.handleInput("\x1b[C");
-	for (let i = 0; i < 11; i++) settings.component.handleInput("\x1b[B");
+	for (let i = 0; i < 12; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Extension status line/);
 
 	settings.component.handleInput(" ");
@@ -411,7 +448,7 @@ test("keeps every Footer selection visible in short terminals", async () => {
 			settings.terminal.rows = 12;
 			settings.component.handleInput("\t");
 			settings.component.handleInput("\t");
-			for (let i = 0; i < 14; i++) {
+			for (let i = 0; i < 15; i++) {
 				const lines = settings.component.render(width);
 				assert.ok(lines.length <= 12, `${language} ${width}x12: ${lines.length} rows`);
 				assert.ok(lines.slice(0, 12).some((line) => line.includes("→ ")));
@@ -426,7 +463,7 @@ test("relayouts on height and width changes without losing the selection", async
 	const settings = await openSettings();
 	settings.component.handleInput("\t");
 	settings.component.handleInput("\t");
-	for (let i = 0; i < 12; i++) settings.component.handleInput("\x1b[B");
+	for (let i = 0; i < 13; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Capitalize provider name/);
 
 	for (const [width, rows] of [[80, 12], [80, 24], [48, 12], [24, 12], [36, 12], [80, 24]] as const) {
@@ -448,7 +485,7 @@ test("preserves long Footer labels' current values at narrow widths", async () =
 		const settings = await openSettings(config);
 		settings.component.handleInput("\t");
 		settings.component.handleInput("\t");
-		for (let i = 0; i < 11; i++) settings.component.handleInput("\x1b[B");
+		for (let i = 0; i < 12; i++) settings.component.handleInput("\x1b[B");
 		for (const id of ["extensionStatuses", "capitalizeProviderName", "nerdIconSpacing"] as const) {
 			for (const toggle of [false, true]) {
 				if (toggle) settings.component.handleInput(" ");
@@ -473,6 +510,7 @@ test("normalizes invalid settings values", () => {
 		writeFileSync(join(agentDir, "open-tui.json"), JSON.stringify({
 			settingsLanguage: "de",
 			cursorStyle: "invalid",
+			contextStyle: "bar-ish",
 			header: "no",
 			inlineFooter: "yes",
 			copyButtons: "no",
@@ -483,6 +521,7 @@ test("normalizes invalid settings values", () => {
 		const loaded = loadConfig();
 		assert.equal(loaded.settingsLanguage, "en");
 		assert.equal(loaded.cursorStyle, "block");
+		assert.equal(loaded.contextStyle, "bar");
 		assert.equal(loaded.header, true);
 		assert.equal(loaded.inlineFooter, false);
 		assert.equal(loaded.copyButtons, true);
@@ -512,4 +551,24 @@ test("cycles the thinking peek line count from General settings", async () => {
 	settings.component.handleInput("\r");
 	assert.equal(settings.getConfig().thinkingPeek.lines, 1);
 	settings.component.handleInput("q");
+});
+
+test("normalizes tool bar settings without dropping the mode", () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-open-tui-panel-"));
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	try {
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		writeFileSync(join(agentDir, "open-tui.json"), JSON.stringify({
+			hideThinkingLabel: "yes",
+			toolView: { mode: "compact", bar: "yes" },
+		}), "utf8");
+		const loaded = loadConfig();
+		assert.equal(loaded.hideThinkingLabel, true);
+		assert.equal(loaded.toolView.mode, "compact");
+		assert.equal(loaded.toolView.bar, true);
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		rmSync(agentDir, { recursive: true, force: true });
+	}
 });

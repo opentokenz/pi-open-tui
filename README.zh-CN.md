@@ -67,7 +67,9 @@ pi -e npm:pi-open-tui
   "enabled": true,
   "header": true,
   "inlineFooter": false,
+  "contextStyle": "bar",
   "copyButtons": true,
+  "hideThinkingLabel": true,
   "settingsLanguage": "zh",
   "cursorStyle": "block",
   "icons": {
@@ -102,7 +104,8 @@ pi -e npm:pi-open-tui
     "lines": 1
   },
   "toolView": {
-    "mode": "native"
+    "mode": "native",
+    "bar": true
   }
 }
 ```
@@ -111,15 +114,18 @@ pi -e npm:pi-open-tui
 
 | 选项 | 可选值 | 说明 |
 | --- | --- | --- |
+| `hideThinkingLabel` | `true`、`false` | 把 Pi 为折叠思考块画的标签置空（包括已加载的历史）；默认 `true`。该行仍会占一行且保持可点击 |
 | `settingsLanguage` | `en`、`zh` | 切换 `/open-tui` 设置界面的语言 |
 | `header` | `true`、`false` | 决定是否用 open-tui 顶部信息栏覆盖 Pi 的 Header；设为 `false` 时把顶部栏位置留给 Pi 或其他扩展 |
 | `inlineFooter` | `true`、`false` | 将两条主要 Footer 信息行移入编辑器上下边框以节省垂直空间，默认关闭；扩展状态行仍显示在编辑器外 |
+| `contextStyle` | `bar`、`numbers` | 上下文用量的画法：`bar` 显示条形和百分比，`numbers` 显示百分比和已用/窗口 Token；默认 `bar` |
 | `copyButtons` | `true`、`false` | 全屏模式下给代码块加圆角边框，并在代码块和用户消息上显示可点击的 `[Copy]` 标签，默认开启；见[复制按钮](#复制按钮) |
 | `cursorStyle` | `block`、`bar`、`underline` | `bar` 和 `underline` 需要终端支持光标形状转义序列 |
 | `icons.mode` | `auto`、`nerd`、`unicode`、`ascii` | 控制底栏和遥测通知使用的图标 |
 | `footerSegments` | 布尔开关 | 分别控制底栏中的各项数据 |
 | `footerSegments.capitalizeProviderName` | 布尔开关 | 将底栏中提供商名称的首字母大写；设为 `false` 时保留原始大小写 |
 | `footerSegments.nerdIconSpacing` | 布尔开关 | 在底栏 Nerd Font 图标后额外留一格空白；默认 `false` |
+| `toolView.bar` | `true`、`false` | 在紧凑工具行左侧画状态色 `▌` 竖条；默认开启 |
 | `telemetry` | 布尔开关 | 控制遥测总开关和各项指标 |
 | `thinkingPeek.lines` | `0`、`1`、`2` | 关闭、单行或双行思考预览 |
 | `toolView.mode` | `native`、`compact` | 内置工具调用显示为 Pi 原生卡片，或紧凑的两行摘要；默认 `native`。只对切换后新建的行生效 |
@@ -128,7 +134,9 @@ pi -e npm:pi-open-tui
 
 底栏的 Token 和费用总计包含助手回复、工具报告的用量、压缩与分支摘要以及缓存预热；缓存命中百分比表示最近一条助手回复，而非整个会话的累计比例。
 
-底栏第一行宽度不足时，先隐藏运行环境和上下文条，然后依次隐藏 Git、会话名称、主机名和计时器；当前目录保留到最后，并缩短为文件夹名。
+上下文用量由 `contextStyle` 决定：`bar` 画出条形和百分比，`numbers` 用百分比和已用/窗口 Token 取代条形及其图标。两种情况下会话 Token 与费用总计都保留在第二行。
+
+底栏第一行宽度不足时，先隐藏运行环境和上下文用量，然后依次隐藏 Git、会话名称、主机名和计时器；当前目录保留到最后，并缩短为文件夹名。
 
 开启 `inlineFooter` 后，两条常规 Footer 信息行会移入编辑器边框，从而节省垂直空间。顶部边框左侧显示 Git 分支，右侧信息组以当前目录开头；开启 `sessionName` 时，会话标题也会显示在左侧。Header 和扩展状态行保持独立显示；终端较窄时优先截断低优先级 Footer 数据，保留右侧统计信息和边框角。
 
@@ -160,27 +168,28 @@ TPS 的计算方式是：将本次运行中服务商报告的全部 Assistant �
           最新一条思考
 ```
 
-该字幕仅在模型真正输出推理内容后出现，非推理模型不会显示。可见性由 Pi 自身的 Hide thinking 开关控制，切换后立即生效。每一行都按*显示宽度*截断（全角字符计 2 列），因此包含中文的思考文本也不会溢出终端。可在 `/open-tui` 的**常规 → 思考预览**中切换，或直接修改 `open-tui.json` 中的 `thinkingPeek.lines`。
+该字幕仅在模型真正输出推理内容后出现，非推理模型不会显示。可见性由 Pi 自身的 Hide thinking 开关控制，切换后立即生效。每一行都按*显示宽度*截断（全角字符计 2 列），因此包含中文的思考文本也不会溢出终端。可在 `/open-tui` 的**常规 → 思考预览**中切换，或直接修改 `open-tui.json` 中的 `thinkingPeek.lines`。折叠块只在流式过程中显示推理字幕，运行结束后会变成空白行，因为 `hideThinkingLabel` 默认为 `true`；设为 `false` 可恢复 Pi 的 `Thinking...` 标签。
 
 ## 工具视图
 
 将**常规 → 工具视图**设为**紧凑**（`toolView.mode: "compact"`）后，Pi 内置工具（`read`、`bash`、`powershell`、`edit`、`write`、`grep`、`find`、`ls`）显示为一行调用加一行摘要：
 
 ```text
-● Read(extensions/open-tui/footer.ts:1-120)
-  └  120 lines
-● Edit(extensions/open-tui/footer.ts)
-  └  +2 −1
-● Bash(npm test)
-  └  Done · 131 lines · 6.4s
+▌ ● Read(extensions/open-tui/footer.ts:1-120)
+▌   └  120 lines
+▌ ● Edit(extensions/open-tui/footer.ts)
+▌   └  +2 −1
+▌ ● Bash(npm test)
+▌   └  Done · 131 lines · 6.4s
 ```
 
+- 一次调用及其结果共用一条状态条：`▌` 用状态色（运行中黄、成功绿、失败红）。不画背景也不画边框，长会话不会满屏色带。`toolView.bar` 关闭状态条。
 - Shell 命令运行中会显示最新 3 行输出和已用时间。
 - 圆点运行中为黄色、完成为绿色、失败为红色；失败的调用同样保持紧凑行，并显示红色摘要；Shell 命令的摘要末尾带上最后一行输出（如 `Exited with code 1 · 12 lines · 1.2s · FAIL tests/a.test.ts`），按 Ctrl+O 查看完整输出。
 - 点击某行只展开这一行为 Pi 原生卡片，`Ctrl+O` 展开全部行；完整输出、diff 和截断提示保持不变。
 - 只改变显示：工具、参数、结果以及模型看到的内容都不受影响。仅接管 Pi 确认来源为内置的工具；第三方和 MCP 工具（包括替换内置同名工具的扩展）保持各自的渲染。
 - 紧凑摘要会标记输出截断，包括 grep 的长行截断；方括号正文和失败信息会保留，不会被误当成工具通知删除。
-- 模式在 Pi 创建某行时确定，因此切换只影响新建的行；执行 `/reload` 或新开会话后整个记录都会应用。
+- 模式与状态条在 Pi 创建某行时读取，因此修改只影响新建的行以及 Pi 重建的行；执行 `/reload` 或新开会话后整个记录都会应用。
 
 ## 复制按钮
 

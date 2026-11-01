@@ -33,7 +33,9 @@ const COPY = {
 			inlineFooter: "Footer in editor border",
 			copyButtons: "Copy buttons",
 			thinkingPeek: "Thinking peek",
+			hideThinkingLabel: "Hide thinking label",
 			toolView: "Tool view",
+			toolBar: "Tool status bar",
 			language: "Language",
 			cursorStyle: "Cursor style",
 			iconMode: "Icon mode",
@@ -45,6 +47,7 @@ const COPY = {
 			gitCommit: "Git tag (detached HEAD)",
 			runtime: "Project runtime",
 			context: "Context usage",
+			contextStyle: "Context display",
 			tokens: "Session tokens",
 			cost: "Session cost",
 			extensionStatuses: "Extension status line",
@@ -63,6 +66,7 @@ const COPY = {
 			toolView: { native: "Native", compact: "Compact" },
 			languages: { en: "English", zh: "简体中文" },
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
+			contextStyles: { bar: "Bar", numbers: "Numbers" },
 			icons: { auto: "Auto", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 		},
 	},
@@ -76,7 +80,9 @@ const COPY = {
 			inlineFooter: "底栏嵌入输入框",
 			copyButtons: "复制按钮",
 			thinkingPeek: "思考预览",
+			hideThinkingLabel: "隐藏思考标签",
 			toolView: "工具视图",
+			toolBar: "工具状态条",
 			language: "语言",
 			cursorStyle: "光标样式",
 			iconMode: "图标模式",
@@ -88,6 +94,7 @@ const COPY = {
 			gitCommit: "Git 标签（分离 HEAD）",
 			runtime: "项目运行环境",
 			context: "上下文用量",
+			contextStyle: "上下文显示",
 			tokens: "会话 Token",
 			cost: "会话费用",
 			extensionStatuses: "扩展状态行",
@@ -106,6 +113,7 @@ const COPY = {
 			toolView: { native: "原生", compact: "紧凑" },
 			languages: { en: "English", zh: "简体中文" },
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
+			contextStyles: { bar: "条形", numbers: "数字" },
 			icons: { auto: "自动", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 		},
 	},
@@ -150,6 +158,10 @@ function cycleCursorStyle(config: OpenTuiConfig): OpenTuiConfig {
 	return { ...config, cursorStyle: next };
 }
 
+function cycleContextStyle(config: OpenTuiConfig): OpenTuiConfig {
+	return { ...config, contextStyle: config.contextStyle === "bar" ? "numbers" : "bar" };
+}
+
 function toggleTelemetry(config: OpenTuiConfig, key: keyof OpenTuiConfig["telemetry"]): OpenTuiConfig {
 	return {
 		...config,
@@ -172,9 +184,11 @@ function buildFeaturesItems(config: OpenTuiConfig, copy: SettingsCopy): SettingI
 		{ id: "header", label: copy.labels.header, currentValue: flag(config.header) },
 		{ id: "settingsLanguage", label: copy.labels.language, currentValue: copy.values.languages[config.settingsLanguage] },
 		{ id: "thinkingPeek", label: copy.labels.thinkingPeek, currentValue: formatThinkingPeekLines(config.thinkingPeek.lines, copy) },
+		{ id: "hideThinkingLabel", label: copy.labels.hideThinkingLabel, currentValue: flag(config.hideThinkingLabel) },
 		{ id: "inlineFooter", label: copy.labels.inlineFooter, currentValue: flag(config.inlineFooter) },
 		{ id: "copyButtons", label: copy.labels.copyButtons, currentValue: flag(config.copyButtons) },
 		{ id: "toolView", label: copy.labels.toolView, currentValue: copy.values.toolView[config.toolView.mode] },
+		{ id: "toolBar", label: copy.labels.toolBar, currentValue: flag(config.toolView.bar) },
 	];
 }
 
@@ -197,6 +211,7 @@ function buildSegmentsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingI
 		{ id: "gitCommit", label: copy.labels.gitCommit, currentValue: flag(segs.gitCommit) },
 		{ id: "runtime", label: copy.labels.runtime, currentValue: flag(segs.runtime) },
 		{ id: "context", label: copy.labels.context, currentValue: flag(segs.context) },
+		{ id: "contextStyle", label: copy.labels.contextStyle, currentValue: copy.values.contextStyles[config.contextStyle] },
 		{ id: "tokens", label: copy.labels.tokens, currentValue: flag(segs.tokens) },
 		{ id: "cost", label: copy.labels.cost, currentValue: flag(segs.cost) },
 		{ id: "liveTps", label: copy.labels.liveTps, currentValue: flag(segs.liveTps) },
@@ -242,8 +257,12 @@ function handleSettingChange(
 		if (itemId === "copyButtons") return { ...config, copyButtons: !config.copyButtons };
 		if (itemId === "settingsLanguage") return toggleLanguage(config);
 		if (itemId === "thinkingPeek") return cycleThinkingPeek(config);
+		if (itemId === "hideThinkingLabel") return { ...config, hideThinkingLabel: !config.hideThinkingLabel };
 		if (itemId === "toolView") {
-			return { ...config, toolView: { mode: config.toolView.mode === "native" ? "compact" : "native" } };
+			return { ...config, toolView: { ...config.toolView, mode: config.toolView.mode === "native" ? "compact" : "native" } };
+		}
+		if (itemId === "toolBar") {
+			return { ...config, toolView: { ...config.toolView, bar: !config.toolView.bar } };
 		}
 	}
 	if (tab === "icons") {
@@ -251,6 +270,7 @@ function handleSettingChange(
 		if (itemId === "cursorStyle") return cycleCursorStyle(config);
 	}
 	if (tab === "segments") {
+		if (itemId === "contextStyle") return cycleContextStyle(config);
 		return toggleSetting(config, itemId as keyof OpenTuiConfig["footerSegments"]);
 	}
 	if (tab === "telemetry") {

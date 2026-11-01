@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { resolveGlyphs } from "../extensions/open-tui/icons.ts";
 import {
 	callDetail,
@@ -36,6 +37,10 @@ const theme = {
 	bold: (text: string) => text,
 } as unknown as Theme;
 const glyphs = () => resolveGlyphs("unicode");
+
+/** Compact rows without a status bar, matching the pre-bar rendering. */
+const noBar = () => false;
+const bar = () => true;
 
 const text = (value: string, details?: unknown): ToolResult => ({ content: [{ type: "text", text: value }], details });
 
@@ -175,7 +180,7 @@ test("call details are sanitized before coloring without changing native argumen
 	] as const) {
 		let nativeArgs: unknown;
 		const native: ToolRenderers = { renderCall: (value) => { nativeArgs = value; return { render: () => [], invalidate() {} }; } };
-		const compact = createCompactRenderers(toolName, native, glyphs);
+		const compact = createCompactRenderers(toolName, native, glyphs, noBar);
 		const checkedTheme = {
 			...theme,
 			fg: (_color: string, value: string) => {
@@ -213,7 +218,7 @@ test("the resolver only takes over built-in tools in compact mode", () => {
 		getAllTools: () => configured ? [{ name: "bash", sourceInfo }] : [],
 	} as unknown as ExtensionAPI;
 	let mode: "native" | "compact" = "native";
-	registerToolView(pi, () => mode, glyphs);
+	registerToolView(pi, () => mode, glyphs, noBar);
 	const { renderers } = fakeNative();
 
 	assert.equal(resolver!("bash", () => renderers), renderers, "native mode keeps Pi's renderers");
@@ -233,7 +238,7 @@ test("the resolver only takes over built-in tools in compact mode", () => {
 
 test("collapsed rows are compact while native renderers keep their own state", () => {
 	const { renderers, seen } = fakeNative();
-	const compact = createCompactRenderers("bash", renderers, glyphs);
+	const compact = createCompactRenderers("bash", renderers, glyphs, noBar);
 	const ctx = context({ args: { command: "npm test" }, durationMs: 6400 });
 
 	assert.deepEqual(compact.renderCall!({ command: "npm test" }, theme, ctx).render(80), [" ● Bash(npm test)"]);
@@ -247,7 +252,7 @@ test("collapsed rows are compact while native renderers keep their own state", (
 
 test("running shell rows show a bounded live tail", () => {
 	const { renderers } = fakeNative();
-	const compact = createCompactRenderers("bash", renderers, glyphs);
+	const compact = createCompactRenderers("bash", renderers, glyphs, noBar);
 	const ctx = context({ isPartial: true });
 	compact.renderCall!({ command: "npm test" }, theme, ctx);
 	const rendered = compact.renderResult!(text("1\n2\n3\n4\n5"), { expanded: false, isPartial: true }, theme, ctx).render(80);
@@ -260,7 +265,7 @@ test("running shell rows show a bounded live tail", () => {
 test("failed rows stay compact with a red summary", () => {
 	const tagged = { ...theme, fg: (color: string, value: string) => `<${color}>${value}` } as unknown as Theme;
 	const { renderers } = fakeNative();
-	const compact = createCompactRenderers("bash", renderers, glyphs);
+	const compact = createCompactRenderers("bash", renderers, glyphs, noBar);
 	const ctx = context({ isError: true, durationMs: 1200 });
 	assert.deepEqual(compact.renderCall!({ command: "npm test" }, tagged, ctx).render(80), [
 		" <error>● <toolTitle>Bash<muted>(npm test)",
@@ -284,7 +289,7 @@ test("failed rows stay compact with a red summary", () => {
 test("expanded rows hand off to Pi's native card", () => {
 	{
 		const { renderers } = fakeNative();
-		const compact = createCompactRenderers("bash", renderers, glyphs);
+		const compact = createCompactRenderers("bash", renderers, glyphs, noBar);
 		const ctx = context({ expanded: true, isError: true });
 		const call = compact.renderCall!({ command: "npm test" }, theme, ctx);
 		const result = compact.renderResult!(text("x"), { expanded: ctx.expanded, isPartial: false }, theme, ctx);
@@ -298,7 +303,73 @@ test("expanded rows hand off to Pi's native card", () => {
 	}
 
 	const { renderers } = fakeNative("self");
-	const compact = createCompactRenderers("edit", renderers, glyphs);
+	const compact = createCompactRenderers("edit", renderers, glyphs, noBar);
 	const ctx = context({ expanded: true });
 	assert.deepEqual(compact.renderCall!({ path: "a.ts" }, theme, ctx).render(40), ["NATIVE CALL"]);
+});
+
+test("compact rows get a left status bar instead of a background", () => {
+	const { renderers } = fakeNative();
+	const compact = createCompactRenderers("bash", renderers, glyphs, bar);
+	const ctx = context({ args: { command: "npm test" }, durationMs: 6400 });
+	const call = compact.renderCall!({ command: "npm test" }, theme, ctx);
+	const result = compact.renderResult!(text("a\nb"), { expanded: false, isPartial: false }, theme, ctx);
+
+	assert.deepEqual(call.render(40), ["▌ ● Bash(npm test)"]);
+	assert.deepEqual(result.render(40), ["▌   └  Done · 2 lines · 6.4s"]);
+});
+
+test("the bar follows the call state", () => {
+	const tagged = { ...theme, fg: (color: string, text: string) => `<${color}>${text}` } as unknown as Theme;
+	const { renderers } = fakeNative();
+	const compact = createCompactRenderers("bash", renderers, glyphs, bar);
+
+	const pending = compact.renderCall!({ command: "npm test" }, tagged, context({ args: { command: "npm test" }, isPartial: true }));
+	assert.match(pending.render(40)[0]!, /^<warning>▌/);
+
+	const done = compact.renderResult!(text("a"), { expanded: false, isPartial: false }, tagged, context({ durationMs: 1200 }));
+	assert.match(done.render(40)[0]!, /^<success>▌/);
+
+	const failed = compact.renderResult!(text("Command exited with code 1"), { expanded: false, isPartial: false }, tagged, context({ isError: true }));
+	assert.match(failed.render(40)[0]!, /^<error>▌/);
+});
+
+test("status bar off keeps the plain compact rows", () => {
+	const { renderers } = fakeNative();
+	const compact = createCompactRenderers("bash", renderers, glyphs, noBar);
+	const ctx = context({ args: { command: "npm test" }, durationMs: 6400 });
+	assert.deepEqual(compact.renderCall!({ command: "npm test" }, theme, ctx).render(80), [" ● Bash(npm test)"]);
+	assert.deepEqual(
+		compact.renderResult!(text("a\nb"), { expanded: false, isPartial: false }, theme, ctx).render(80),
+		["   └  Done · 2 lines · 6.4s"],
+	);
+});
+
+test("bars never exceed the available width", () => {
+	const { renderers } = fakeNative();
+	const compact = createCompactRenderers("bash", renderers, glyphs, bar);
+	const ctx = context({ args: { command: "npm test -- --watch" } });
+	const call = compact.renderCall!({ command: "npm test -- --watch" }, theme, ctx);
+	const result = compact.renderResult!(text("a\nb"), { expanded: false, isPartial: false }, theme, ctx);
+	for (let width = 1; width <= 60; width++) {
+		for (const line of [...call.render(width), ...result.render(width)]) {
+			assert.ok(visibleWidth(line) <= width, `width ${width}: ${line}`);
+		}
+	}
+});
+
+test("the bar paints no background across the row", () => {
+	const bg = (_color: string, text: string) => `\x1b[48;5;236m${text}\x1b[49m`;
+	const fg = (_color: string, text: string) => `\x1b[38;5;240m${text}\x1b[39m`;
+	const ansiTheme = { fg, bg, bold: (text: string) => text } as unknown as Theme;
+	const { renderers } = fakeNative();
+	const compact = createCompactRenderers("bash", renderers, glyphs, bar);
+	const ctx = context({ args: { command: "npm test" } });
+	const call = compact.renderCall!({ command: "npm test" }, ansiTheme, ctx);
+	const result = compact.renderResult!(text("a\nb"), { expanded: false, isPartial: false }, ansiTheme, ctx);
+
+	for (const line of [...call.render(40), ...result.render(40)]) {
+		assert.doesNotMatch(line, /\x1b\[48;/, "no background is painted");
+		assert.ok(visibleWidth(line) < 40, "rows end after their content");
+	}
 });

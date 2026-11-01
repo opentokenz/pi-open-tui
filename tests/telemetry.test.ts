@@ -591,7 +591,7 @@ test("open-tui keeps a bounded peek scoped to the current assistant", async () =
 		assert.equal(renderPeekRows(transcriptWidth), 2, "the peek rows must fit the sidebar-narrowed transcript");
 		const currentLabel = getThinkingLabel(thinkingComponents[1]!);
 		assert.match(currentLabel, /think/);
-		assert.equal(getThinkingLabel(thinkingComponents[0]!), "Thinking...");
+		assert.equal(getThinkingLabel(thinkingComponents[0]!), "", "collapsed thinking labels are blanked by default");
 		assert.equal(renderPeekRows(terminalWidth), 2, "the peek must rebuild when the transcript width changes");
 		assert.notEqual(getThinkingLabel(thinkingComponents[1]!), currentLabel);
 		assert.equal(renderPeekRows(transcriptWidth), 2);

@@ -5,8 +5,15 @@ import type { IconMode } from "./icons.ts";
 
 export type SettingsLanguage = "en" | "zh";
 export type CursorStyle = "block" | "bar" | "underline";
+export type ContextStyle = "bar" | "numbers";
 export type ThinkingPeekLines = 0 | 1 | 2;
 export type ToolViewMode = "native" | "compact";
+
+/** Status bar beside compact tool rows. */
+export interface ToolViewBar {
+	/** Draw a state-coloured bar left of compact rows. */
+	bar: boolean;
+}
 
 export type { IconMode } from "./icons.ts";
 
@@ -46,8 +53,12 @@ export interface OpenTuiConfig {
 	/** Override Pi's header with the open-tui header. When false, the header slot is left to Pi or another extension. */
 	header: boolean;
 	inlineFooter: boolean;
+	/** Footer context usage: a bar or the token totals. */
+	contextStyle: ContextStyle;
 	/** Clickable `Copy` labels on code blocks and user messages (fullscreen mode only). */
 	copyButtons: boolean;
+	/** Blank the label Pi shows for collapsed thinking blocks. */
+	hideThinkingLabel: boolean;
 	settingsLanguage: SettingsLanguage;
 	cursorStyle: CursorStyle;
 	icons: {
@@ -56,7 +67,7 @@ export interface OpenTuiConfig {
 	footerSegments: FooterSegments;
 	telemetry: TelemetryConfig;
 	thinkingPeek: ThinkingPeekConfig;
-	toolView: {
+	toolView: ToolViewBar & {
 		mode: ToolViewMode;
 	};
 }
@@ -65,7 +76,9 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 	enabled: true,
 	header: true,
 	inlineFooter: false,
+	contextStyle: "bar",
 	copyButtons: true,
+	hideThinkingLabel: true,
 	settingsLanguage: "en",
 	cursorStyle: "block",
 	icons: {
@@ -101,6 +114,7 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 	},
 	toolView: {
 		mode: "native",
+		bar: true,
 	},
 };
 
@@ -182,6 +196,12 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 		if (typeof config.copyButtons !== "boolean") {
 			config.copyButtons = DEFAULT_CONFIG.copyButtons;
 		}
+		if (config.contextStyle !== "bar" && config.contextStyle !== "numbers") {
+			config.contextStyle = DEFAULT_CONFIG.contextStyle;
+		}
+		if (typeof config.hideThinkingLabel !== "boolean") {
+			config.hideThinkingLabel = DEFAULT_CONFIG.hideThinkingLabel;
+		}
 		config.footerSegments = normalizeFlags(config.footerSegments, DEFAULT_CONFIG.footerSegments);
 		config.telemetry = normalizeFlags(config.telemetry, DEFAULT_CONFIG.telemetry);
 		if (typeof config.icons !== "object" || config.icons === null || !ICON_MODES.includes(config.icons.mode)) {
@@ -201,6 +221,8 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 		if (typeof config.toolView !== "object" || config.toolView === null
 			|| (config.toolView.mode !== "native" && config.toolView.mode !== "compact")) {
 			config.toolView = structuredClone(DEFAULT_CONFIG.toolView);
+		} else if (typeof config.toolView.bar !== "boolean") {
+			config.toolView.bar = DEFAULT_CONFIG.toolView.bar;
 		}
 		return config;
 	} catch (err) {

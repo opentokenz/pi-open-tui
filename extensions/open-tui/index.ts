@@ -82,8 +82,8 @@ export default function (pi: ExtensionAPI) {
 		if (!peekLabelActive) return;
 		const target = ctx ?? lastCtx;
 		if (!target || !isTuiContext(target)) return;
-		// The global reset is safe here: every completed message returns to Pi's native label.
-		target.ui.setHiddenThinkingLabel();
+		// Every completed message returns to the configured label; blank when history should stay quiet.
+		target.ui.setHiddenThinkingLabel(config.hideThinkingLabel ? "" : undefined);
 		peekLabelActive = false;
 	};
 
@@ -97,6 +97,12 @@ export default function (pi: ExtensionAPI) {
 			peekSettleTimer = undefined;
 		}
 	};
+	/** Pi renders this label for every collapsed thinking block, including loaded history. */
+	const applyThinkingLabel = (ctx: ExtensionContext): void => {
+		if (!isTuiContext(ctx) || peekLabelActive) return;
+		ctx.ui.setHiddenThinkingLabel(config.hideThinkingLabel ? "" : undefined);
+	};
+
 	const applyUi = (ctx: ExtensionContext) => {
 		if (!isTuiContext(ctx)) return;
 		if (!config.enabled) {
@@ -138,6 +144,7 @@ export default function (pi: ExtensionAPI) {
 			});
 			active = true;
 		}
+		applyThinkingLabel(ctx);
 	};
 
 	const uninstallUi = (ctx: ExtensionContext) => {
@@ -154,6 +161,7 @@ export default function (pi: ExtensionAPI) {
 			requestFooterRender = undefined;
 			resetPeek();
 			clearPeekLabel(ctx);
+			ctx.ui.setHiddenThinkingLabel();
 			active = false;
 		}
 	};
@@ -375,6 +383,7 @@ export default function (pi: ExtensionAPI) {
 			return config.enabled ? config.toolView.mode : "native";
 		},
 		() => resolveGlyphs(config.icons.mode),
+		() => config.toolView.bar,
 	);
 
 	pi.registerMarkdownTransformer(markCopyScope);
@@ -406,6 +415,7 @@ export default function (pi: ExtensionAPI) {
 				cleanupHeader = newConfig.header ? installHeader(pi, lastCtx) : undefined;
 			}
 			if (copyButtonsChanged) copyButtons?.refresh();
+			if (lastCtx) applyThinkingLabel(lastCtx);
 			if (lastCtx) {
 				pendingUiChange = getPendingUiChange(newConfig.enabled, active);
 			}

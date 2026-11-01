@@ -257,6 +257,40 @@ function lines(build: (width: number) => string[]): Component {
 	};
 }
 
+interface BarPaint {
+	bar: string;
+}
+
+/**
+ * Prefixes a compact row with the state-coloured bar. The bar carries the state on its own, so no
+ * background is painted and long rows stay quiet.
+ */
+class CompactBar implements Component {
+	private readonly content: Component;
+	private readonly bar: string;
+
+	constructor(content: Component, bar: string) {
+		this.content = content;
+		this.bar = bar;
+	}
+
+	invalidate(): void {
+		this.content.invalidate?.();
+	}
+
+	render(width: number): string[] {
+		const total = Math.max(1, width);
+		if (total < 3) {
+			// Below three columns the bar would eat the content, so the row stands alone.
+			return this.content.render(total).map((line) => truncateToWidth(line, total, "…"));
+		}
+		const prefix = `${this.bar} `;
+		// Content is a `lines()` component: it truncates to the width it is given, so the
+		// prefix can be concatenated without a second width measurement per row.
+		return this.content.render(total - 2).map((line) => prefix + line);
+	}
+}
+
 function rowState(context: RenderContext): RowState {
 	const state = context.state as Partial<RowState>;
 	state.nativeState ??= {};
@@ -272,10 +306,21 @@ function statusBg(theme: Theme, context: RenderContext): (text: string) => strin
 	return (text) => theme.bg(bg, text);
 }
 
+/** Prefix one half of a compact call with its state-coloured bar. */
+function barPart(
+	content: Component,
+	theme: Theme,
+	context: RenderContext,
+): Component {
+	const color: ThemeColor = context.isError ? "error" : context.isPartial ? "warning" : "success";
+	return new CompactBar(content, theme.fg(color, "▌"));
+}
+
 export function createCompactRenderers(
 	toolName: string,
 	native: ToolRenderers,
 	glyphs: () => IconGlyphs,
+	getBar: () => boolean,
 ): ToolRenderers {
 	const label = TOOL_LABELS[toolName] ?? toolName;
 	const isShell = toolName === "bash" || toolName === "powershell";
@@ -286,6 +331,7 @@ export function createCompactRenderers(
 		renderShell: "self",
 		renderCall(args, theme, context) {
 			const row = rowState(context);
+			const bar = getBar();
 			// Always run the native renderer so its own state (timers, edit preview) stays current.
 			row.nativeCall = native.renderCall?.(args, theme, nativeContext(context, row, row.nativeCall));
 			if (context.executionStarted) row.startedAt ??= Date.now();
@@ -300,19 +346,22 @@ export function createCompactRenderers(
 				row.callCard.addChild(new Spacer(1));
 				row.callCard.addChild(row.nativeCall);
 				row.callCard.addChild(row.callCardBottom);
+				// Expanded rows hand off to Pi's native card, which carries its own status background.
 				return row.callCard;
 			}
 			const color: ThemeColor = context.isError ? "error" : context.isPartial ? "warning" : "success";
 			const detail = sanitizeStatus(callDetail(toolName, (args ?? {}) as Args, context.cwd));
-			const pad = " ".repeat(context.outputPad);
-			return lines(() => [
+			const pad = bar ? "" : " ".repeat(context.outputPad);
+			const content = lines(() => [
 				pad + theme.fg(color, glyphs().toolCall) + " " + theme.fg("toolTitle", theme.bold(label))
 					+ (detail ? theme.fg("muted", `(${detail})`) : ""),
 			]);
+			return bar ? barPart(content, theme, context) : content;
 		},
 
 		renderResult(result, options, theme, context) {
 			const row = rowState(context);
+			const bar = getBar();
 			row.nativeResult = native.renderResult?.(result, options, theme, nativeContext(context, row, row.nativeResult));
 			if (showNative(context) && row.nativeResult) {
 				if (native.renderShell === "self") return row.nativeResult;
@@ -326,9 +375,9 @@ export function createCompactRenderers(
 				row.resultCard.addChild(new Spacer(1));
 				return row.resultCard;
 			}
-			const pad = " ".repeat(context.outputPad);
+			const pad = bar ? "" : " ".repeat(context.outputPad);
 			const args = (context.args ?? {}) as Args;
-			return lines(() => {
+			const content = lines(() => {
 				const { toolResult } = glyphs();
 				const gutter = `${pad}  ${theme.fg("dim", toolResult)}  `;
 				const indent = `${pad}  ${" ".repeat(visibleWidth(toolResult))}  `;
@@ -348,6 +397,7 @@ export function createCompactRenderers(
 				}
 				return [gutter + theme.fg("muted", summary + duration)];
 			});
+			return bar ? barPart(content, theme, context) : content;
 		},
 	};
 }
@@ -358,11 +408,16 @@ const OWNED_TOOLS = new Set(Object.keys(TOOL_LABELS));
  * Display-only: Pi's tools, execution, arguments and results are untouched. The mode is read
  * when Pi builds a row, so switching it affects new rows only.
  */
-export function registerToolView(pi: ExtensionAPI, getMode: () => ToolViewMode, glyphs: () => IconGlyphs): void {
+export function registerToolView(
+	pi: ExtensionAPI,
+	getMode: () => ToolViewMode,
+	glyphs: () => IconGlyphs,
+	getBar: () => boolean,
+): void {
 	pi.registerToolRenderer((toolName, next) => {
 		const native = next();
 		if (!native || !OWNED_TOOLS.has(toolName) || getMode() !== "compact") return native;
 		if (pi.getAllTools().find((tool) => tool.name === toolName)?.sourceInfo?.source !== "builtin") return native;
-		return createCompactRenderers(toolName, native, glyphs);
+		return createCompactRenderers(toolName, native, glyphs, getBar);
 	});
 }

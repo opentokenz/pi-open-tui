@@ -402,20 +402,27 @@ test("narrow footer sheds the context bar before left segments", () => {
 		footerData,
 	) as Component;
 
-	// Roomy width: full bar with tokens is right-aligned on line 1.
+	// Roomy width: the default bar style is right-aligned on line 1 and does not
+	// repeat the token totals that the numbers style owns.
 	const wide = component.render(120).join("\n").split("\n")[0]!;
-	assert.ok(wide.includes("250/1.0k"), `full context missing\n${wide}`);
+	assert.match(wide, /[#-]{4,}/, `context bar missing\n${wide}`);
+	assert.ok(!wide.includes("250/1.0k"), `bar style must not repeat the token totals\n${wide}`);
 
-	// Narrow: bar + tokens compact to just icon + pct, cwd survives.
+	// Narrow: the context form sheds to icon + pct, cwd survives.
 	const narrow = component.render(40).join("\n").split("\n")[0]!;
-	assert.ok(narrow.includes("25.0%"), `compact pct missing\n${narrow}`);
-	assert.ok(!narrow.includes("250/1.0k"), `token counts should be compacted\n${narrow}`);
+	assert.ok(narrow.includes("25.0%"), `context pct missing\n${narrow}`);
 	assert.ok(narrow.includes("project"), `cwd should survive\n${narrow}`);
 
 	// Extremely narrow: context and git yield before the cwd is truncated.
 	const tiny = component.render(6).join("\n").split("\n")[0]!;
 	assert.ok(!tiny.includes("25.0%"), `context should be dropped\n${tiny}`);
 	assert.match(tiny, /^@ /);
+
+	// Numbers style swaps the bar for the totals of the tokens currently used.
+	config.contextStyle = "numbers";
+	const numbers = component.render(120).join("\n").split("\n")[0]!;
+	assert.ok(numbers.includes("250/1.0k"), `token totals missing\n${numbers}`);
+	assert.doesNotMatch(numbers, /[#-]{4,}/, `numbers style must not draw a bar\n${numbers}`);
 });
 
 test("provides inline footer content without duplicating native rows", () => {

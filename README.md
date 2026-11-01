@@ -67,7 +67,9 @@ Example configuration:
   "enabled": true,
   "header": true,
   "inlineFooter": false,
+  "contextStyle": "bar",
   "copyButtons": true,
+  "hideThinkingLabel": true,
   "settingsLanguage": "en",
   "cursorStyle": "block",
   "icons": {
@@ -102,7 +104,8 @@ Example configuration:
     "lines": 1
   },
   "toolView": {
-    "mode": "native"
+    "mode": "native",
+    "bar": true
   }
 }
 ```
@@ -111,15 +114,18 @@ Key options:
 
 | Option | Values | Notes |
 | --- | --- | --- |
+| `hideThinkingLabel` | `true`, `false` | Blanks the label Pi draws for collapsed thinking blocks, including loaded history; defaults to `true`. Pi still shows a blank row and the block stays clickable |
 | `settingsLanguage` | `en`, `zh` | Changes the `/open-tui` interface language |
 | `header` | `true`, `false` | Overrides Pi's header with the open-tui header; set it to `false` to leave the header slot to Pi or another extension |
 | `inlineFooter` | `true`, `false` | Moves the two main Footer rows into the editor's top and bottom borders; defaults to `false`. Extension status rows remain below the editor |
+| `contextStyle` | `bar`, `numbers` | Draws context usage as a bar plus percentage or as the percentage plus the tokens in use against the window; defaults to `bar` |
 | `copyButtons` | `true`, `false` | Frames code blocks and shows a clickable `[Copy]` label on code blocks and user messages in fullscreen mode; defaults to `true`. See [Copy buttons](#copy-buttons) |
 | `cursorStyle` | `block`, `bar`, `underline` | `bar` and `underline` require terminal cursor-shape support |
 | `icons.mode` | `auto`, `nerd`, `unicode`, `ascii` | Controls footer and telemetry icons |
 | `footerSegments` | Boolean flags | Shows or hides individual footer data |
 | `footerSegments.capitalizeProviderName` | Boolean | Capitalizes the first character of the provider name in the footer; set it to `false` to keep the provider's original casing |
 | `footerSegments.nerdIconSpacing` | Boolean | Adds an extra blank cell after Nerd Font icons in the footer; defaults to `false` |
+| `toolView.bar` | `true`, `false` | Draws a state-coloured `▌` bar left of compact tool rows; defaults to `true` |
 | `telemetry` | Boolean flags | Enables telemetry and its individual measurements |
 | `thinkingPeek.lines` | `0`, `1`, `2` | Off, one-line, or two-line hidden thinking preview |
 | `toolView.mode` | `native`, `compact` | Draws built-in tool calls as Pi's cards or as compact two-line rows; defaults to `native`. Applies to rows created after the change |
@@ -128,7 +134,9 @@ Key options:
 
 Footer token and cost totals include assistant responses, tool-reported usage, compaction and branch summaries, and cache warming. The cache-hit percentage describes the most recent assistant response, not the cumulative session.
 
-When the first Footer row is too narrow, the runtime and context bar are hidden first, then Git, the session name, and the host name and timer. The CWD stays longest, shortened to its folder name.
+The context usage follows `contextStyle`: `bar` draws the bar with the percentage, `numbers` replaces the bar and its icon with the percentage and the `used/window` tokens. Session token and cost totals stay in the second row either way.
+
+When the first Footer row is too narrow, the runtime and context usage are hidden first, then Git, the session name, and the host name and timer. The CWD stays longest, shortened to its folder name.
 
 With `inlineFooter` enabled, the two normal Footer rows are rendered inside the editor frame to save vertical space. The top border places the Git branch on the left and CWD first in the right-hand group; the session title appears on the left too when `sessionName` is enabled. The Header and extension status rows remain separate; narrow terminals truncate lower-priority Footer data first, keeping the right-hand statistics and the border corner.
 
@@ -160,27 +168,28 @@ When Pi's **Hide thinking** setting is enabled, pi-open-tui shows a compact tick
           latest thought
 ```
 
-The ticker appears only once the model actually streams reasoning, so non-reasoning models never show it. Pi's own Hide thinking toggle controls visibility; changing it takes effect immediately. Each row is truncated by *visible* width, so CJK-wide thinking text cannot overflow. Configure it from **General → Thinking peek** in `/open-tui`, or via `thinkingPeek.lines` in `open-tui.json`.
+The ticker appears only once the model actually streams reasoning, so non-reasoning models never show it. Pi's own Hide thinking toggle controls visibility; changing it takes effect immediately. Each row is truncated by *visible* width, so CJK-wide thinking text cannot overflow. Configure it from **General → Thinking peek** in `/open-tui`, or via `thinkingPeek.lines` in `open-tui.json`. Collapsed blocks keep showing the reasoning only while streaming; after the run they collapse to a blank row because `hideThinkingLabel` defaults to `true` — set it to `false` to restore Pi's `Thinking...` label.
 
 ## Tool view
 
 With **General → Tool view** set to **Compact** (`toolView.mode: "compact"`), Pi's built-in tools (`read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`) render as one call line and one summary line:
 
 ```text
-● Read(extensions/open-tui/footer.ts:1-120)
-  └  120 lines
-● Edit(extensions/open-tui/footer.ts)
-  └  +2 −1
-● Bash(npm test)
-  └  Done · 131 lines · 6.4s
+▌ ● Read(extensions/open-tui/footer.ts:1-120)
+▌   └  120 lines
+▌ ● Edit(extensions/open-tui/footer.ts)
+▌   └  +2 −1
+▌ ● Bash(npm test)
+▌   └  Done · 131 lines · 6.4s
 ```
 
+- Each call and its result sit behind one status bar: `▌` in the state colour (yellow while running, green when done, red when failed). No background or frame is drawn, so a long transcript stays quiet. `toolView.bar` turns the bar off.
 - While a shell command runs, the newest 3 output lines and the elapsed time are shown.
 - The dot is yellow while running, green when done, and red when failed. Failed calls keep the compact row with a red summary; for shell commands it ends with the last output line, such as `Exited with code 1 · 12 lines · 1.2s · FAIL tests/a.test.ts`. Press Ctrl+O for the full output.
 - Clicking a row expands only that row into Pi's native card, and `Ctrl+O` expands all rows. The full output, diff, and truncation notices are unchanged.
 - Only the display changes. Tools, arguments, results, and what the model sees are untouched. Only tools confirmed by Pi as built-in are wrapped; third-party and MCP tools, including replacements with built-in names, keep their own rendering.
 - Compact summaries flag truncated output, including grep's long-line truncation. Bracketed output and failure messages are preserved rather than mistaken for tool notices.
-- The mode is chosen when Pi creates a row, so switching it affects new rows; `/reload` or a new session applies it to the whole transcript.
+- The mode and the bar are read when Pi builds a row, so changing them affects new rows and rows Pi rebuilds; `/reload` or a new session applies them to the whole transcript.
 
 ## Copy buttons
 

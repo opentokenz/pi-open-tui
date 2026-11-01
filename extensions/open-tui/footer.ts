@@ -55,13 +55,26 @@ function renderBar(theme: Theme, pct: number, barWidth: number, ascii: boolean):
 	);
 }
 
+interface ContextUsage {
+	tokens: number;
+	window: number;
+	percent: number;
+}
+
+function readContextUsage(ctx: ExtensionContext): ContextUsage {
+	const usage = ctx.getContextUsage();
+	return {
+		tokens: usage?.tokens ?? 0,
+		window: usage?.contextWindow ?? ctx.model?.contextWindow ?? 0,
+		percent: usage?.percent ?? 0,
+	};
+}
+
 /** Compact context form: icon + percentage, no bar or token counts. */
 function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconGlyphs): string {
-	const contextUsage = ctx.getContextUsage();
-	const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-	if (contextWindow <= 0) return "";
-	const contextPct = contextUsage?.percent ?? 0;
-	return `${theme.fg(stressColor(contextPct), glyphs.context)} ${theme.fg(stressColor(contextPct), `${contextPct.toFixed(1)}%`)}`;
+	const { window, percent } = readContextUsage(ctx);
+	if (window <= 0) return "";
+	return `${theme.fg(stressColor(percent), glyphs.context)} ${theme.fg(stressColor(percent), `${percent.toFixed(1)}%`)}`;
 }
 
 function renderGitSegment(
@@ -149,23 +162,28 @@ function renderContextBar(
 	glyphs: IconGlyphs,
 	iconMode: OpenTuiConfig["icons"]["mode"],
 ): string {
-	const contextUsage = ctx.getContextUsage();
-	const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-	const contextTokens = contextUsage?.tokens ?? 0;
-	const contextPct = contextUsage?.percent ?? 0;
+	const { window, percent } = readContextUsage(ctx);
 
 	// ponytail: render 0% bar once we know the window — keeps the right side
 	// populated instead of collapsing everything left in an empty session.
-	if (contextWindow <= 0) return "";
+	if (window <= 0) return "";
 
-	const pctText = theme.fg(stressColor(contextPct), `${contextPct.toFixed(1)}%`);
-	const ctxText = `${theme.fg("text", fmtTokens(contextTokens))}${theme.fg("dim", "/")}${theme.fg("text", fmtTokens(contextWindow))}`;
-	const contextIcon = theme.fg(stressColor(contextPct), glyphs.context);
-	// Cap the bar at `width - reserved` (with a floor of 4) so the full form
+	const pctText = theme.fg(stressColor(percent), `${percent.toFixed(1)}%`);
+	const contextIcon = theme.fg(stressColor(percent), glyphs.context);
+	// Cap the bar at `width - reserved` (with a floor of 4) so the bar form
 	// never forces the left segments out before compact/drop logic kicks in.
-	const reserved = visibleWidth(contextIcon) + visibleWidth(pctText) + visibleWidth(ctxText) + 5 + 2;
+	const reserved = visibleWidth(contextIcon) + visibleWidth(pctText) + 4;
 	const barWidth = Math.max(4, Math.min(12, width - reserved));
-	return `${contextIcon} ${renderBar(theme, contextPct, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText} ${theme.fg("dim", "·")} ${ctxText}`;
+	return `${contextIcon} ${renderBar(theme, percent, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText}`;
+}
+
+/** Numbers form: percentage plus the tokens in use against the window. */
+function renderContextNumbers(theme: Theme, ctx: ExtensionContext): string {
+	const { tokens, window, percent } = readContextUsage(ctx);
+	if (window <= 0) return "";
+	const pctText = theme.fg(stressColor(percent), `${percent.toFixed(1)}%`);
+	const tokensText = `${theme.fg("text", fmtTokens(tokens))}${theme.fg("dim", "/")}${theme.fg("text", fmtTokens(window))}`;
+	return `${pctText} ${theme.fg("dim", "·")} ${tokensText}`;
 }
 
 function renderStatsBlock(
@@ -383,7 +401,9 @@ function renderFooterContent(
 	let contextText = "";
 	let contextCompact: string | undefined;
 	if (segments.context) {
-		contextText = renderContextBar(theme, ctx, width, glyphs, config.icons.mode);
+		contextText = config.contextStyle === "numbers"
+			? renderContextNumbers(theme, ctx)
+			: renderContextBar(theme, ctx, width, glyphs, config.icons.mode);
 		const compact = renderContextCompact(theme, ctx, glyphs);
 		if (compact && visibleWidth(compact) < visibleWidth(contextText)) {
 			contextCompact = compact;
