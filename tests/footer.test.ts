@@ -481,11 +481,63 @@ test("provides inline footer content without duplicating native rows", () => {
 	assert.ok(narrow);
 	assert.ok(visibleWidth(narrow.bottom.left) + visibleWidth(narrow.bottom.right) <= 30);
 	assert.match(stripAnsi(narrow.bottom.right), /\$/);
-	assert.match(stripAnsi(narrow.bottom.left), /\.\.\.$/);
+	// The provider is dropped before the model name loses width.
+	assert.ok(!stripAnsi(narrow.bottom.left).includes("OpenAI"), stripAnsi(narrow.bottom.left));
+	assert.match(stripAnsi(narrow.bottom.left), /gpt-5$/);
 	assert.equal(visibleWidth(handle.renderInline(visibleWidth(narrow.bottom.right) + 1)!.bottom.left), 0);
 
 	config.inlineFooter = true;
 	assert.deepEqual(component.render(40), []);
+});
+
+test("inline model row drops a long provider before shortening the model name", () => {
+	let footerFactory: NonNullable<Parameters<ExtensionContext["ui"]["setFooter"]>[0]> | undefined;
+	const ctx = {
+		model: { provider: "cloudflare-ai-gateway", contextWindow: 1_000 },
+		ui: {
+			setFooter(factory: typeof footerFactory) {
+				footerFactory = factory;
+			},
+		},
+		sessionManager: {
+			getCwd: () => "/work/project",
+			getLeafId: () => null,
+			getEntries: () => [],
+			getSessionName: () => undefined,
+		},
+		getContextUsage: () => ({ tokens: 0, contextWindow: 1_000, percent: 0 }),
+	} as unknown as ExtensionContext;
+	const config = structuredClone(DEFAULT_CONFIG);
+	config.icons.mode = "ascii";
+	const state: FooterState = {
+		git: emptyGitStatus(),
+		runtime: null,
+		workingSince: undefined,
+		lastDoneIn: undefined,
+	};
+	const handle = installFooter(
+		ctx,
+		() => state,
+		() => config,
+		() => ({ provider: "Cloudflare-ai-gateway", model: "DeepSeek V4.1 Flash · opencode", effort: "max" }),
+		{ setRequestRender() {}, scheduleGitRefresh() {} },
+	);
+	assert.ok(footerFactory);
+	const footerData = {
+		onBranchChange: () => () => {},
+		getExtensionStatuses: () => new Map(),
+	} as unknown as ReadonlyFooterDataProvider;
+	footerFactory({ requestRender() {} } as TUI, theme, footerData);
+
+	// Roomy: the provider keeps its slot between the icon and the model name.
+	const wide = handle.renderInline(120)!.bottom;
+	assert.equal(stripAnsi(wide.left), "M · Cloudflare-ai-gateway · DeepSeek V4.1 Flash · opencode · ~ max");
+
+	// The provider no longer fits: it is removed instead of truncated, and the
+	// model name and thinking level stay intact.
+	const narrow = handle.renderInline(70)!.bottom;
+	assert.equal(stripAnsi(narrow.left), "M · DeepSeek V4.1 Flash · opencode · ~ max");
+	assert.ok(visibleWidth(narrow.left) + 1 + visibleWidth(narrow.right) <= 70);
 });
 
 test("auto gates Nerd icons by TTY and UTF-8 support", () => {
@@ -918,7 +970,7 @@ test("ASCII footer renders icons as semantic labels", () => {
 		"* main",
 		"!2",
 		"node 24.6.0",
-		"o working",
+		"o 2s",
 		"#",
 		"M",
 		"~ high",
@@ -1294,12 +1346,13 @@ test("working timer shows live TPS gated by its footer setting and sheds it firs
 	const component = footerFactory({ requestRender() {} } as TUI, tpsTheme, footerData) as Component;
 	const line = (width = 120) => component.render(width)[0]!;
 
-	assert.match(line(), /o working \S+ · <accent>> ~54 tok\/s/);
+	assert.match(line(), /o \S+ · <accent>> ~54 tok\/s/);
 	liveTps = { tps: 53.5, stale: true };
-	assert.match(line(), /o working \S+ · <dim>> ~54 tok\/s/);
+	assert.match(line(), /o \S+ · <dim>> ~54 tok\/s/);
 	liveTps = { tps: 53.5, stale: false };
-	const narrow = line(60);
-	assert.match(narrow, /working/);
+	const narrow = line(45);
+	assert.doesNotMatch(narrow, /working/);
+	assert.match(narrow, /o \d+s/);
 	assert.doesNotMatch(narrow, /tok\/s/);
 
 	config.footerSegments.liveTps = false;

@@ -147,7 +147,7 @@ function renderRuntimeSegment(
 
 function renderTimerSegment(theme: Theme, state: FooterState, glyphs: IconGlyphs): string {
 	if (state.workingSince !== undefined) {
-		return `${theme.fg("accent", glyphs.working)} ${theme.fg("dim", "working")} ${theme.fg("accent", formatDuration(Date.now() - state.workingSince))}`;
+		return `${theme.fg("accent", glyphs.working)} ${theme.fg("accent", formatDuration(Date.now() - state.workingSince))}`;
 	}
 	if (state.lastDoneIn !== undefined) {
 		return `${theme.fg("success", glyphs.done)} ${theme.fg("success", "done")} ${theme.fg("text", formatDuration(state.lastDoneIn))}`;
@@ -262,18 +262,34 @@ export interface InlineFooterLines {
 
 /**
  * Split the bottom border content the way `alignRight` splits the plain row:
- * the right block (statistics) survives, the left one (model) shrinks to an
- * ellipsis and only then disappears. Keeps the assembled border inside its
- * budget so editor-side truncation never eats the right corner.
+ * the right block (statistics) survives, the left one (model) shrinks and only
+ * then disappears. Keeps the assembled border inside its budget so editor-side
+ * truncation never eats the right corner.
+ *
+ * `provider` is not truncated like the rest: once the row is too narrow to hold
+ * it, the label is dropped, so a long provider name never costs the model name
+ * any width.
  */
-function fitInlineLine(left: string, right: string, width: number, theme: Theme): InlineFooterLine {
+function fitInlineModelLine(
+	base: readonly PrioritizedSegment[],
+	provider: PrioritizedSegment | undefined,
+	right: string,
+	width: number,
+	theme: Theme,
+): InlineFooterLine {
 	const rightWidth = visibleWidth(right);
 	if (rightWidth > width) {
 		return { left: "", right: truncateToWidth(right, width, theme.fg("dim", "...")) };
 	}
 	const availableForLeft = width - rightWidth - 1;
 	if (availableForLeft <= 0) return { left: "", right };
-	return { left: truncateToWidth(left, availableForLeft, theme.fg("dim", "...")), right };
+	const withProvider = provider ? [base[0], provider, ...base.slice(1)] : base;
+	const full = withProvider
+		.filter((part) => part.text !== "")
+		.map((part) => part.text)
+		.join(theme.fg("dim", " · "));
+	if (visibleWidth(full) <= availableForLeft) return { left: full, right };
+	return { left: fitInlineSegments(base, availableForLeft, theme), right };
 }
 
 export interface FooterHandle {
@@ -429,18 +445,23 @@ function renderFooterContent(
 		right: fitInlineSegments(inlineTopRightParts, inlineRightBudget, theme),
 	};
 
-	const modelParts: string[] = [];
-	modelParts.push(theme.fg("mdLink", glyphs.model));
-	if (meta.provider && meta.provider !== "Unknown") {
-		modelParts.push(theme.fg(providerColor(ctx.model?.provider ?? "none"), meta.provider));
-	}
-	modelParts.push(theme.fg("text", meta.model));
+	// Highest priority survives longest; the provider is handled separately,
+	// since it is dropped rather than truncated when the row gets narrow.
+	const modelSegments: PrioritizedSegment[] = [
+		{ text: theme.fg("mdLink", glyphs.model), priority: 3 },
+		{ text: theme.fg("text", meta.model), priority: 2 },
+	];
 	if (meta.effort && meta.effort !== "off") {
-		modelParts.push(theme.fg(effortColor(meta.effort), `${glyphs.thinking} ${meta.effort}`));
+		modelSegments.push({
+			text: theme.fg(effortColor(meta.effort), `${glyphs.thinking} ${meta.effort}`),
+			priority: 1,
+		});
 	}
-	const modelBlock = modelParts.join(theme.fg("dim", " · "));
+	const providerSegment: PrioritizedSegment | undefined = meta.provider && meta.provider !== "Unknown"
+		? { text: theme.fg(providerColor(ctx.model?.provider ?? "none"), meta.provider), priority: 0 }
+		: undefined;
 	const statsBlock = renderStatsBlock(theme, totals, glyphs, segments);
-	const inlineBottom = fitInlineLine(modelBlock, statsBlock, width, theme);
+	const inlineBottom = fitInlineModelLine(modelSegments, providerSegment, statsBlock, width, theme);
 	const line2 = alignRight(inlineBottom.left, inlineBottom.right, width, theme);
 	const mainLines: [string, string] = [line1, line2]
 		.map((line) => truncateToWidth(line, width, theme.fg("dim", "..."))) as [string, string];

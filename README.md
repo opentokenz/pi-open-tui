@@ -136,7 +136,7 @@ Footer token and cost totals include assistant responses, tool-reported usage, c
 
 The context usage follows `contextStyle`: `bar` draws the bar with the percentage, `numbers` replaces the bar and its icon with the percentage and the `used/window` tokens. Session token and cost totals stay in the second row either way.
 
-When the first Footer row is too narrow, the runtime and context usage are hidden first, then Git, the session name, and the host name and timer. The CWD stays longest, shortened to its folder name.
+When the first Footer row is too narrow, the runtime and context usage are hidden first, then Git, the session name, and the host name and timer. The CWD stays longest, shortened to its folder name. In the second row the provider name is dropped as soon as it no longer fits, so a long provider never shortens the model name or the thinking level.
 
 With `inlineFooter` enabled, the two normal Footer rows are rendered inside the editor frame to save vertical space. The top border places the Git branch on the left and CWD first in the right-hand group; the session title appears on the left too when `sessionName` is enabled. The Header and extension status rows remain separate; narrow terminals truncate lower-priority Footer data first, keeping the right-hand statistics and the border corner.
 
@@ -150,7 +150,7 @@ After each complete agent run, pi-open-tui shows one transient result. Tool-call
 
 TPS is calculated from all provider-reported assistant output tokens divided by the total generation time across the run. Timing starts at `turn_start` and ends at the assistant `message_end`, so it includes TTFT, hidden reasoning, buffering, and stalls; tool execution between turns is excluded. Runs without output tokens or measurable generation time show `TPS —`.
 
-While a response streams, the working timer also shows the current estimated speed, for example `working 12.3s · ~54 tok/s`. The `~` marks it as an estimate: it is the rate over the last 2 seconds of streamed text, thinking, and tool-call arguments, estimated at about 4 characters per token for Latin text and code and 1 token per CJK character. It drops toward zero during stalls and stays dimmed at its last value during tool execution and between messages. It is controlled by **Footer → Live TPS** (`footerSegments.liveTps`), independently of the telemetry notification. It disappears when the run ends; the exact TPS above is the authoritative value.
+While a response streams, the working timer also shows the current estimated speed, for example `12s · ~54 tok/s`. The `~` marks it as an estimate: it is the rate over the last 2 seconds of streamed text, thinking, and tool-call arguments, estimated at about 4 characters per token for Latin text and code and 1 token per CJK character. It drops toward zero during stalls and stays dimmed at its last value during tool execution and between messages. It is controlled by **Footer → Live TPS** (`footerSegments.liveTps`), independently of the telemetry notification. It disappears when the run ends; the exact TPS above is the authoritative value.
 
 The `$ / M` value is the model's list-price rate from `usage.cost.total`, not the cumulative session cost shown in the footer. Every telemetry field can be toggled from the **Telemetry** tab.
 
