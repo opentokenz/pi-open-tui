@@ -476,21 +476,30 @@ test("provides inline footer content without duplicating native rows", () => {
 	config.footerSegments.sessionName = false;
 	assert.ok(!handle.renderInline(100)!.top.left.includes("session-title"));
 
-	// Narrow: the model block is shed first, matching the plain row's alignRight.
+	// Narrow: the icon and the provider go first, then the statistics; the model
+	// name stays.
 	const narrow = handle.renderInline(30);
 	assert.ok(narrow);
-	assert.ok(visibleWidth(narrow.bottom.left) + visibleWidth(narrow.bottom.right) <= 30);
-	assert.match(stripAnsi(narrow.bottom.right), /\$/);
-	// The provider is dropped before the model name loses width.
-	assert.ok(!stripAnsi(narrow.bottom.left).includes("OpenAI"), stripAnsi(narrow.bottom.left));
-	assert.match(stripAnsi(narrow.bottom.left), /gpt-5$/);
-	assert.equal(visibleWidth(handle.renderInline(visibleWidth(narrow.bottom.right) + 1)!.bottom.left), 0);
+	assert.equal(stripAnsi(narrow.bottom.left), "gpt-5");
+	assert.equal(stripAnsi(narrow.bottom.right), "↑ 0 | ↓ 0 | $ $0.000");
+
+	// The statistics shrink from the cheapest end before the model name loses
+	// any width, so the row never collapses to the statistics alone.
+	const tighter = handle.renderInline(20)!;
+	assert.equal(stripAnsi(tighter.bottom.left), "gpt-5");
+	assert.equal(stripAnsi(tighter.bottom.right), "↑ 0 | $ $0.000");
+	assert.ok(visibleWidth(tighter.bottom.left) + 1 + visibleWidth(tighter.bottom.right) <= 20);
+
+	// Even a row too narrow for the statistics keeps the model name.
+	const tightest = handle.renderInline(6)!;
+	assert.equal(stripAnsi(tightest.bottom.left), "gpt-5");
+	assert.equal(stripAnsi(tightest.bottom.right), "");
 
 	config.inlineFooter = true;
 	assert.deepEqual(component.render(40), []);
 });
 
-test("inline model row drops a long provider before shortening the model name", () => {
+test("inline model row leads with the model name and keeps it over the provider", () => {
 	let footerFactory: NonNullable<Parameters<ExtensionContext["ui"]["setFooter"]>[0]> | undefined;
 	const ctx = {
 		model: { provider: "cloudflare-ai-gateway", contextWindow: 1_000 },
@@ -529,15 +538,83 @@ test("inline model row drops a long provider before shortening the model name", 
 	} as unknown as ReadonlyFooterDataProvider;
 	footerFactory({ requestRender() {} } as TUI, theme, footerData);
 
-	// Roomy: the provider keeps its slot between the icon and the model name.
+	// Roomy: the model name leads, the thinking level follows, then the provider
+	// and the icon.
 	const wide = handle.renderInline(120)!.bottom;
-	assert.equal(stripAnsi(wide.left), "M · Cloudflare-ai-gateway · DeepSeek V4.1 Flash · opencode · ~ max");
+	assert.equal(stripAnsi(wide.left), "DeepSeek V4.1 Flash · opencode · ~ max · Cloudflare-ai-gateway · M");
 
 	// The provider no longer fits: it is removed instead of truncated, and the
 	// model name and thinking level stay intact.
 	const narrow = handle.renderInline(70)!.bottom;
-	assert.equal(stripAnsi(narrow.left), "M · DeepSeek V4.1 Flash · opencode · ~ max");
+	assert.equal(stripAnsi(narrow.left), "DeepSeek V4.1 Flash · opencode · ~ max");
 	assert.ok(visibleWidth(narrow.left) + 1 + visibleWidth(narrow.right) <= 70);
+
+	// A thinking level that only fits in part is dropped whole: a truncated
+	// "~..." would just be noise before the shortened model name.
+	const tiny = handle.renderInline(24)!.bottom;
+	assert.ok(!stripAnsi(tiny.left).includes("~"), stripAnsi(tiny.left));
+	assert.match(stripAnsi(tiny.left), /^DeepSeek V4\.1 Flash/);
+});
+
+test("inline model row keeps the model name and thinking level over the statistics", () => {
+	let footerFactory: NonNullable<Parameters<ExtensionContext["ui"]["setFooter"]>[0]> | undefined;
+	const ctx = {
+		model: { provider: "openai", contextWindow: 1_000 },
+		ui: {
+			setFooter(factory: typeof footerFactory) {
+				footerFactory = factory;
+			},
+		},
+		sessionManager: {
+			getCwd: () => "/work/project",
+			getLeafId: () => null,
+			getEntries: () => [],
+			getSessionName: () => undefined,
+		},
+		getContextUsage: () => ({ tokens: 0, contextWindow: 1_000, percent: 0 }),
+	} as unknown as ExtensionContext;
+	const config = structuredClone(DEFAULT_CONFIG);
+	config.icons.mode = "ascii";
+	const state: FooterState = {
+		git: emptyGitStatus(),
+		runtime: null,
+		workingSince: undefined,
+		lastDoneIn: undefined,
+	};
+	const handle = installFooter(
+		ctx,
+		() => state,
+		() => config,
+		() => ({ provider: "OpenAI", model: "gpt-5", effort: "high" }),
+		{ setRequestRender() {}, scheduleGitRefresh() {} },
+	);
+	assert.ok(footerFactory);
+	const footerData = {
+		onBranchChange: () => () => {},
+		getExtensionStatuses: () => new Map(),
+	} as unknown as ReadonlyFooterDataProvider;
+	footerFactory({ requestRender() {} } as TUI, theme, footerData);
+
+	const wide = handle.renderInline(120)!.bottom;
+	assert.equal(stripAnsi(wide.left), "gpt-5 · ~ high · OpenAI · M");
+	assert.match(stripAnsi(wide.right), /\$0\.000/);
+
+	// The statistics are the first to give way, one field at a time, while the
+	// model name and the thinking level keep their full text.
+	const narrow = handle.renderInline(24)!.bottom;
+	assert.equal(stripAnsi(narrow.left), "gpt-5 · ~ high");
+	assert.equal(stripAnsi(narrow.right), "↑ 0");
+
+	// Once the statistics are gone, the row still shows both model fields.
+	const tightest = handle.renderInline(14)!.bottom;
+	assert.equal(stripAnsi(tightest.left), "gpt-5 · ~ high");
+	assert.equal(stripAnsi(tightest.right), "");
+
+	// Only a row too narrow for the thinking level drops it, before the model
+	// name loses characters.
+	const tiny = handle.renderInline(10)!.bottom;
+	assert.equal(stripAnsi(tiny.left), "gpt-5");
+	assert.equal(stripAnsi(tiny.right), "");
 });
 
 test("auto gates Nerd icons by TTY and UTF-8 support", () => {

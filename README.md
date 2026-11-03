@@ -136,9 +136,9 @@ Footer token and cost totals include assistant responses, tool-reported usage, c
 
 The context usage follows `contextStyle`: `bar` draws the bar with the percentage, `numbers` replaces the bar and its icon with the percentage and the `used/window` tokens. Session token and cost totals stay in the second row either way.
 
-When the first Footer row is too narrow, the runtime and context usage are hidden first, then Git, the session name, and the host name and timer. The CWD stays longest, shortened to its folder name. In the second row the provider name is dropped as soon as it no longer fits, so a long provider never shortens the model name or the thinking level.
+When the first Footer row is too narrow, the runtime and context usage are hidden first, then Git, the session name, and the host name and timer. The CWD stays longest, shortened to its folder name. The second row leads with the model name and the thinking level, and it drops everything else before shortening either of them: the model icon and the provider name go first, then the cache hit, output, cost, and input totals give up space one at a time.
 
-With `inlineFooter` enabled, the two normal Footer rows are rendered inside the editor frame to save vertical space. The top border places the Git branch on the left and CWD first in the right-hand group; the session title appears on the left too when `sessionName` is enabled. The Header and extension status rows remain separate; narrow terminals truncate lower-priority Footer data first, keeping the right-hand statistics and the border corner.
+With `inlineFooter` enabled, the two normal Footer rows are rendered inside the editor frame to save vertical space. The top border places the Git branch on the left and CWD first in the right-hand group; the session title appears on the left too when `sessionName` is enabled. The Header and extension status rows remain separate; narrow terminals truncate lower-priority Footer data first, keep the model name and thinking level in the bottom row over the session totals, and leave the border corner intact.
 
 ## Turn telemetry
 

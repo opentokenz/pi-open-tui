@@ -186,28 +186,58 @@ function renderContextNumbers(theme: Theme, ctx: ExtensionContext): string {
 	return `${pctText} ${theme.fg("dim", "·")} ${tokensText}`;
 }
 
-function renderStatsBlock(
+// Priorities on the model row decide what the row gives up first, not where a
+// part sits: the model name and the thinking level outrank every other part, so
+// a narrow row sheds the icon, the provider, and finally the statistics before
+// it shortens either of them.
+const MODEL_NAME_PRIORITY = 100;
+const MODEL_EFFORT_PRIORITY = 90;
+const MODEL_PROVIDER_PRIORITY = 1;
+const MODEL_ICON_PRIORITY = 0;
+const MODEL_CORE_PRIORITY = MODEL_EFFORT_PRIORITY;
+const MODEL_SEPARATOR = " · ";
+const STATS_SEPARATOR = " | ";
+
+function joinSegments(
+	parts: readonly PrioritizedSegment[],
+	separator: string,
+	theme: Theme,
+): string {
+	return parts
+		.filter((part) => part.text !== "")
+		.map((part) => part.text)
+		.join(theme.fg("dim", separator));
+}
+
+function renderStatsSegments(
 	theme: Theme,
 	totals: UsageTotals,
 	glyphs: IconGlyphs,
 	segments: OpenTuiConfig["footerSegments"],
-): string {
-	const stats: string[] = [];
+): PrioritizedSegment[] {
+	// Lower priority yields first: cache hit, output, cost, then input.
+	const stats: PrioritizedSegment[] = [];
 	if (segments.tokens) {
-		stats.push(theme.fg("accent", `${glyphs.input} ${formatInputBreakdown(totals.input, totals.cacheRead)}`));
-		stats.push(theme.fg("success", `${glyphs.output} ${fmtTokens(totals.output)}`));
+		stats.push({
+			text: theme.fg("accent", `${glyphs.input} ${formatInputBreakdown(totals.input, totals.cacheRead)}`),
+			priority: 5,
+		});
+		stats.push({ text: theme.fg("success", `${glyphs.output} ${fmtTokens(totals.output)}`), priority: 3 });
 		// ponytail: hide cache-hit rate when the provider never reported cache
 		// tokens — avoids a misleading "0%" on providers without prompt caching.
 		const hasCacheTokens = totals.cacheRead > 0 || totals.cacheWrite > 0;
 		if (hasCacheTokens && totals.latestCacheHitRate !== undefined) {
-			stats.push(theme.fg(cacheHitColor(totals.latestCacheHitRate), `${glyphs.cacheHit} ${totals.latestCacheHitRate.toFixed(1)}%`));
+			stats.push({
+				text: theme.fg(cacheHitColor(totals.latestCacheHitRate), `${glyphs.cacheHit} ${totals.latestCacheHitRate.toFixed(1)}%`),
+				priority: 2,
+			});
 		}
 	}
 	if (segments.cost) {
-		stats.push(theme.fg("warning", `${glyphs.cost} $${totals.cost.toFixed(3)}`));
+		stats.push({ text: theme.fg("warning", `${glyphs.cost} $${totals.cost.toFixed(3)}`), priority: 4 });
 	}
 
-	return stats.join(` ${theme.fg("dim", "|")} `);
+	return stats;
 }
 
 const ANSI_RESET = "\x1b[0m";
@@ -261,35 +291,54 @@ export interface InlineFooterLines {
 }
 
 /**
- * Split the bottom border content the way `alignRight` splits the plain row:
- * the right block (statistics) survives, the left one (model) shrinks and only
- * then disappears. Keeps the assembled border inside its budget so editor-side
- * truncation never eats the right corner.
+ * Fit the bottom row around the model name and the thinking level: parts are
+ * dropped from the cheapest end (icon, provider, cache hit, output, cost, input)
+ * until the row fits, so the statistics yield space before either of them
+ * shortens. Only a row too narrow for the name and the level themselves drops
+ * the level first and then truncates the name.
  *
- * `provider` is not truncated like the rest: once the row is too narrow to hold
- * it, the label is dropped, so a long provider name never costs the model name
- * any width.
+ * The model parts arrive in display order; their priorities only decide the drop
+ * order, never the position.
  */
 function fitInlineModelLine(
-	base: readonly PrioritizedSegment[],
-	provider: PrioritizedSegment | undefined,
-	right: string,
+	modelParts: readonly PrioritizedSegment[],
+	statsParts: readonly PrioritizedSegment[],
 	width: number,
 	theme: Theme,
 ): InlineFooterLine {
-	const rightWidth = visibleWidth(right);
-	if (rightWidth > width) {
-		return { left: "", right: truncateToWidth(right, width, theme.fg("dim", "...")) };
+	const core = modelParts.filter((part) => part.priority >= MODEL_CORE_PRIORITY);
+	let keptModel = [...modelParts];
+	let keptStats = [...statsParts];
+	const rowWidth = () => {
+		const statsWidth = keptStats.length > 0
+			? 1 + visibleWidth(joinSegments(keptStats, STATS_SEPARATOR, theme))
+			: 0;
+		return visibleWidth(joinSegments(keptModel, MODEL_SEPARATOR, theme)) + statsWidth;
+	};
+
+	while (rowWidth() > width) {
+		const optional = [
+			...keptModel.filter((part) => part.priority < MODEL_CORE_PRIORITY),
+			...keptStats,
+		];
+		if (optional.length === 0) break;
+		const victim = optional.reduce((worst, part) => (part.priority < worst.priority ? part : worst));
+		if (keptModel.includes(victim)) {
+			keptModel = keptModel.filter((part) => part !== victim);
+		} else {
+			keptStats = keptStats.filter((part) => part !== victim);
+		}
 	}
-	const availableForLeft = width - rightWidth - 1;
-	if (availableForLeft <= 0) return { left: "", right };
-	const withProvider = provider ? [base[0], provider, ...base.slice(1)] : base;
-	const full = withProvider
-		.filter((part) => part.text !== "")
-		.map((part) => part.text)
-		.join(theme.fg("dim", " · "));
-	if (visibleWidth(full) <= availableForLeft) return { left: full, right };
-	return { left: fitInlineSegments(base, availableForLeft, theme), right };
+
+	const right = joinSegments(keptStats, STATS_SEPARATOR, theme);
+	if (rowWidth() <= width) {
+		return { left: joinSegments(keptModel, MODEL_SEPARATOR, theme), right };
+	}
+	const leftBudget = Math.max(0, width - visibleWidth(right) - (right ? 1 : 0));
+	// The thinking level is dropped whole: a truncated "~..." reads as noise.
+	const wholeCore = visibleWidth(joinSegments(core, MODEL_SEPARATOR, theme)) <= leftBudget;
+	const fitted = wholeCore ? core : core.filter((part) => part.priority >= MODEL_NAME_PRIORITY);
+	return { left: fitInlineSegments(fitted, leftBudget, theme), right };
 }
 
 export interface FooterHandle {
@@ -301,14 +350,15 @@ function fitInlineSegments(
 	parts: readonly PrioritizedSegment[],
 	width: number,
 	theme: Theme,
+	separator = MODEL_SEPARATOR,
 ): string {
-	const separator = theme.fg("dim", " · ");
-	const separatorReserve = Math.max(0, parts.length - 1) * Math.max(0, visibleWidth(separator) - 1);
+	const painted = theme.fg("dim", separator);
+	const separatorReserve = Math.max(0, parts.length - 1) * Math.max(0, visibleWidth(painted) - 1);
 	return fitSegmentsByPriority(
 		parts,
 		Math.max(0, width - separatorReserve),
 		theme.fg("dim", "..."),
-	).filter(Boolean).join(separator);
+	).filter(Boolean).join(painted);
 }
 
 function renderFooterContent(
@@ -445,23 +495,30 @@ function renderFooterContent(
 		right: fitInlineSegments(inlineTopRightParts, inlineRightBudget, theme),
 	};
 
-	// Highest priority survives longest; the provider is handled separately,
-	// since it is dropped rather than truncated when the row gets narrow.
+	// The model name leads the row; the icon trails it because it only helps
+	// once the reader already knows which slot the row belongs to.
 	const modelSegments: PrioritizedSegment[] = [
-		{ text: theme.fg("mdLink", glyphs.model), priority: 3 },
-		{ text: theme.fg("text", meta.model), priority: 2 },
+		{ text: theme.fg("text", meta.model), priority: MODEL_NAME_PRIORITY },
 	];
 	if (meta.effort && meta.effort !== "off") {
 		modelSegments.push({
 			text: theme.fg(effortColor(meta.effort), `${glyphs.thinking} ${meta.effort}`),
-			priority: 1,
+			priority: MODEL_EFFORT_PRIORITY,
 		});
 	}
-	const providerSegment: PrioritizedSegment | undefined = meta.provider && meta.provider !== "Unknown"
-		? { text: theme.fg(providerColor(ctx.model?.provider ?? "none"), meta.provider), priority: 0 }
-		: undefined;
-	const statsBlock = renderStatsBlock(theme, totals, glyphs, segments);
-	const inlineBottom = fitInlineModelLine(modelSegments, providerSegment, statsBlock, width, theme);
+	if (meta.provider && meta.provider !== "Unknown") {
+		modelSegments.push({
+			text: theme.fg(providerColor(ctx.model?.provider ?? "none"), meta.provider),
+			priority: MODEL_PROVIDER_PRIORITY,
+		});
+	}
+	modelSegments.push({ text: theme.fg("mdLink", glyphs.model), priority: MODEL_ICON_PRIORITY });
+	const inlineBottom = fitInlineModelLine(
+		modelSegments,
+		renderStatsSegments(theme, totals, glyphs, segments),
+		width,
+		theme,
+	);
 	const line2 = alignRight(inlineBottom.left, inlineBottom.right, width, theme);
 	const mainLines: [string, string] = [line1, line2]
 		.map((line) => truncateToWidth(line, width, theme.fg("dim", "..."))) as [string, string];
