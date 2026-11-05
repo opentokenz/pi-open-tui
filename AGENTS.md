@@ -20,9 +20,9 @@ Use `npm test` for the full test suite and `npm run typecheck` for the strict Ty
 
 ## Compatibility
 
-- Support Pi 1.2.0 and later, with Node.js 22.19.0 as the minimum.
-- Use public extension APIs available in Pi 1.2.0; do not add fallbacks for older, unsupported releases.
-- CI checks Pi 1.2.0 and latest on Node.js 22.19.0/24 across Linux, Windows, and macOS. Keep all Pi packages on the same version when reproducing either endpoint.
+- Support Pi 1.5.0 and later, with Node.js 22.19.0 as the minimum.
+- Use public extension APIs available in Pi 1.5.0; do not add fallbacks for older, unsupported releases.
+- CI checks Pi 1.5.0 and latest on Node.js 22.19.0/24 across Linux, Windows, and macOS. Keep all Pi packages on the same version when reproducing either endpoint.
 
 ## Code Conventions
 
@@ -36,5 +36,6 @@ Use `npm test` for the full test suite and `npm run typecheck` for the strict Ty
 - Add or update focused `node:test` coverage for behavior changes.
 - Run the relevant tests and `npm run typecheck` before finishing. For a full check, run `npm test && npm run typecheck`.
 - When settings, configuration, or other user-visible behavior changes, update both README files where applicable.
+- Every version bump must include a matching entry in `CHANGELOG.md`, following Pi's package changelog format: newest first, a `## [x.y.z] - YYYY-MM-DD` heading that matches the `package.json` version, and simple, clear descriptions grouped under `### New Features`, `### Breaking Changes`, `### Added`, `### Changed`, `### Fixed`, and `### Removed` as applicable.
 - Use temporary directories for config and Git checks; do not write to the developer's real agent directory.
 - Do not edit `package-lock.json` unless dependency metadata changes.

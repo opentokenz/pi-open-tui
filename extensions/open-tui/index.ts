@@ -125,6 +125,7 @@ export default function (pi: ExtensionAPI) {
 						void scheduleGitRefresh(ctx);
 					},
 					getLiveTps: () => turnTelemetry.getLiveTps(),
+					canEmbedInEditor: () => editor?.isFramed() ?? false,
 				},
 			);
 			cleanupFooter = footer.cleanup;
@@ -380,7 +381,7 @@ export default function (pi: ExtensionAPI) {
 				config = loadConfig();
 				configLoaded = true;
 			}
-			return config.enabled ? config.toolView.mode : "native";
+			return config.enabled ? config.toolView : { ...config.toolView, mode: "native" };
 		},
 		() => resolveGlyphs(config.icons.mode),
 		() => config.toolView.bar,
