@@ -174,7 +174,8 @@ function renderContextBar(
 	// never forces the left segments out before compact/drop logic kicks in.
 	const reserved = visibleWidth(contextIcon) + visibleWidth(pctText) + 4;
 	const barWidth = Math.max(4, Math.min(12, width - reserved));
-	return `${contextIcon} ${renderBar(theme, percent, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText}`;
+	// return `${contextIcon} ${renderBar(theme, percent, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText}`;
+	return `${renderBar(theme, percent, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText}`;
 }
 
 /** Numbers form: percentage plus the tokens in use against the window. */
@@ -457,7 +458,8 @@ function renderFooterContent(
 			: null;
 		const text = liveTps === null
 			? timerSeg
-			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
+			// : `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
+			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ${Math.round(liveTps.tps)} tok/s`)}`;
 		// Narrow widths shed the live TPS before the timer itself.
 		leftParts.push({ text, compactText: liveTps === null ? undefined : timerSeg, priority: 3 });
 		inlineTopRightParts.push(leftParts.at(-1)!);
