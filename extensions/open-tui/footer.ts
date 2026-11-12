@@ -2,6 +2,7 @@ import type { ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-cod
 import { hostname as osHostname } from "node:os";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { OpenTuiConfig } from "./config.ts";
+import type { FooterBuiltinSegment, FooterPosition, RegisteredFooterSegment } from "./footer-segments.ts";
 import type { IconGlyphs } from "./icons.ts";
 import { resolveGlyphs, resolveIconMode, runtimeSymbol } from "./icons.ts";
 import type { GitStatus } from "./git.ts";
@@ -70,11 +71,12 @@ function readContextUsage(ctx: ExtensionContext): ContextUsage {
 	};
 }
 
-/** Compact context form: icon + percentage, no bar or token counts. */
-function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconGlyphs): string {
+/** Compact context form: icon + percentage, or the percentage alone when the bar is off. */
+function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconGlyphs, showBar: boolean): string {
 	const { window, percent } = readContextUsage(ctx);
 	if (window <= 0) return "";
-	return `${theme.fg(stressColor(percent), glyphs.context)} ${theme.fg(stressColor(percent), `${percent.toFixed(1)}%`)}`;
+	const pctText = theme.fg(stressColor(percent), `${percent.toFixed(1)}%`);
+	return showBar ? `${theme.fg(stressColor(percent), glyphs.context)} ${pctText}` : pctText;
 }
 
 function renderGitSegment(
@@ -161,8 +163,9 @@ function renderContextBar(
 	width: number,
 	glyphs: IconGlyphs,
 	iconMode: OpenTuiConfig["icons"]["mode"],
+	showBar: boolean,
 ): string {
-	const { window, percent } = readContextUsage(ctx);
+	const { tokens, window, percent } = readContextUsage(ctx);
 
 	// ponytail: render 0% bar once we know the window — keeps the right side
 	// populated instead of collapsing everything left in an empty session.
@@ -170,6 +173,10 @@ function renderContextBar(
 
 	const pctText = theme.fg(stressColor(percent), `${percent.toFixed(1)}%`);
 	const contextIcon = theme.fg(stressColor(percent), glyphs.context);
+	if (!showBar) {
+		const tokensText = `${theme.fg("text", fmtTokens(tokens))}${theme.fg("dim", "/")}${theme.fg("text", fmtTokens(window))}`;
+		return `${pctText} ${theme.fg("dim", "·")} ${tokensText}`;
+	}
 	// Cap the bar at `width - reserved` (with a floor of 4) so the bar form
 	// never forces the left segments out before compact/drop logic kicks in.
 	const reserved = visibleWidth(contextIcon) + visibleWidth(pctText) + 4;
@@ -195,6 +202,9 @@ const MODEL_NAME_PRIORITY = 100;
 const MODEL_EFFORT_PRIORITY = 90;
 const MODEL_PROVIDER_PRIORITY = 1;
 const MODEL_ICON_PRIORITY = 0;
+// Built-in row-2 priority when extensions contribute segments: the model still
+// outlives the statistics, but an explicit contribution priority can beat it.
+const MODEL_BUILTIN_PRIORITY = 3;
 const MODEL_CORE_PRIORITY = MODEL_EFFORT_PRIORITY;
 const MODEL_SEPARATOR = " · ";
 const STATS_SEPARATOR = " | ";
@@ -215,7 +225,7 @@ function renderStatsSegments(
 	totals: UsageTotals,
 	glyphs: IconGlyphs,
 	segments: OpenTuiConfig["footerSegments"],
-): PrioritizedSegment[] {
+): { tokens: PrioritizedSegment[]; cost?: PrioritizedSegment } {
 	// Lower priority yields first: cache hit, output, cost, then input.
 	const stats: PrioritizedSegment[] = [];
 	if (segments.tokens) {
@@ -234,11 +244,11 @@ function renderStatsSegments(
 			});
 		}
 	}
-	if (segments.cost) {
-		stats.push({ text: theme.fg("warning", `${glyphs.cost} $${totals.cost.toFixed(3)}`), priority: 4 });
-	}
+	const cost = segments.cost
+		? { text: theme.fg("warning", `${glyphs.cost} $${totals.cost.toFixed(3)}`), priority: 4 }
+		: undefined;
 
-	return stats;
+	return { tokens: stats, cost };
 }
 
 const ANSI_RESET = "\x1b[0m";
@@ -275,6 +285,7 @@ export interface FooterHooks {
 	setRequestRender: (fn: (() => void) | undefined) => void;
 	scheduleGitRefresh: () => void;
 	getLiveTps?: () => LiveTps | null;
+	getExtensionSegments?: () => readonly RegisteredFooterSegment[];
 	canEmbedInEditor?: () => boolean;
 }
 
@@ -363,6 +374,84 @@ function fitInlineSegments(
 	).filter(Boolean).join(painted);
 }
 
+type FooterSide = "left" | "right";
+type FooterLayoutMode = "plain" | "inline";
+
+// Empty built-ins retain their slots so before/after contributions remain visible.
+const FOOTER_ANCHORS: Record<FooterLayoutMode, Record<1 | 2, Record<FooterSide, readonly FooterBuiltinSegment[]>>> = {
+	plain: {
+		1: { left: ["cwd", "hostname", "sessionName", "git", "runtime", "timer"], right: ["context"] },
+		2: { left: ["model"], right: ["tokens", "cost"] },
+	},
+	inline: {
+		1: { left: ["sessionName", "git"], right: ["cwd", "hostname", "runtime", "timer", "context"] },
+		2: { left: ["model"], right: ["tokens", "cost"] },
+	},
+};
+
+function fitContributedRow(
+	row: 1 | 2,
+	mode: FooterLayoutMode,
+	builtins: Partial<Record<FooterBuiltinSegment, PrioritizedSegment>>,
+	contributions: readonly RegisteredFooterSegment[],
+	width: number,
+	theme: Theme,
+): InlineFooterLine | undefined {
+	let contributed = false;
+	const collect = (side: FooterSide): PrioritizedSegment[] => {
+		const parts: PrioritizedSegment[] = [];
+		const append = (matches: (position: FooterPosition) => boolean) => {
+			for (const segment of contributions) {
+				if (!matches(segment.position)) continue;
+				contributed = true;
+				parts.push({
+					text: renderStatusText(theme, segment.text),
+					compactText: segment.compactText && visibleWidth(segment.compactText) > 0
+						? renderStatusText(theme, segment.compactText)
+						: undefined,
+					priority: segment.priority,
+				});
+			}
+		};
+		const atEdge = (edge: "start" | "end") => append((position) => "row" in position
+			&& position.row === row && position.side === side && (position.edge ?? "end") === edge);
+		atEdge("start");
+		for (const anchor of FOOTER_ANCHORS[mode][row][side]) {
+			append((position) => "before" in position && position.before === anchor);
+			const builtin = builtins[anchor];
+			if (builtin?.text) parts.push(builtin);
+			append((position) => "after" in position && position.after === anchor);
+		}
+		atEdge("end");
+		return parts;
+	};
+	const left = collect("left");
+	const right = collect("right");
+	if (!contributed) return undefined;
+
+	const leftSeparator = row === 1 && mode === "plain" ? " " : theme.fg("dim", " · ");
+	const rightSeparator = row === 1 ? leftSeparator : theme.fg("dim", " | ");
+	const fitted = fitSegmentsByPriority([...left, ...right], width, theme.fg("dim", "..."), {
+		compactOrder: "priority",
+		gapWidth: (previous, next) => {
+			if (previous < left.length && next >= left.length) return 1;
+			return visibleWidth(next < left.length ? leftSeparator : rightSeparator);
+		},
+	});
+	// Truncation can remove an input's trailing reset; terminate each surviving style.
+	const join = (parts: string[], separator: string) => parts.filter(Boolean)
+		.map((part) => `${part}${ANSI_RESET}`).join(separator);
+	return {
+		left: join(fitted.slice(0, left.length), leftSeparator),
+		right: join(fitted.slice(left.length), rightSeparator),
+	};
+}
+
+function alignContributedRow(line: InlineFooterLine, width: number, theme: Theme): string {
+	if (!line.right) return truncateToWidth(line.left, width, theme.fg("dim", "..."));
+	return alignRight(line.left, line.right, width, theme);
+}
+
 function renderFooterContent(
 	ctx: ExtensionContext,
 	getState: () => FooterState,
@@ -372,6 +461,7 @@ function renderFooterContent(
 	footerData: FooterDataLike,
 	width: number,
 	getLiveTps: () => LiveTps | null,
+	getExtensionSegments: () => readonly RegisteredFooterSegment[],
 ): { mainLines: [string, string]; inlineLines: InlineFooterLines; extensionLines: string[] } {
 	if (width <= 0) {
 		return {
@@ -395,6 +485,10 @@ function renderFooterContent(
 	}
 	const meta = getModelMeta();
 	const totals = getUsageTotals(ctx);
+	const builtins: Partial<Record<FooterBuiltinSegment, PrioritizedSegment>> = {};
+	const contributions = segments.extensionSegments
+		? getExtensionSegments().filter((segment) => visibleWidth(segment.text) > 0)
+		: [];
 
 	const leftParts: PrioritizedSegment[] = [];
 	const inlineTopLeftParts: PrioritizedSegment[] = [];
@@ -417,6 +511,7 @@ function renderFooterContent(
 			},
 		});
 		inlineTopRightParts.push(leftParts.at(-1)!);
+		builtins.cwd = leftParts.at(-1)!;
 	}
 	if (segments.hostname) {
 		const shortHost = shortHostname(osHostname());
@@ -426,6 +521,7 @@ function renderFooterContent(
 				priority: 3,
 			});
 			inlineTopRightParts.push(leftParts.at(-1)!);
+			builtins.hostname = leftParts.at(-1)!;
 		}
 	}
 	const sessionName = ctx.sessionManager.getSessionName();
@@ -437,18 +533,21 @@ function renderFooterContent(
 		if (segments.sessionName) {
 			leftParts.push(sessionPart);
 			inlineTopLeftParts.push(sessionPart);
+			builtins.sessionName = sessionPart;
 		}
 	}
 	const gitSeg = renderGitSegment(theme, state.git, glyphs, segments);
 	if (gitSeg) {
 		leftParts.push({ text: gitSeg, priority: 1 });
 		inlineTopLeftParts.push(leftParts.at(-1)!);
+		builtins.git = leftParts.at(-1)!;
 	}
 	if (segments.runtime) {
 		const runtimeSeg = renderRuntimeSegment(theme, state.runtime, config.icons.mode, segments.nerdIconSpacing);
 		if (runtimeSeg) {
 			leftParts.push({ text: runtimeSeg, priority: 0 });
 			inlineTopRightParts.push(leftParts.at(-1)!);
+			builtins.runtime = leftParts.at(-1)!;
 		}
 	}
 	const timerSeg = renderTimerSegment(theme, state, glyphs);
@@ -458,11 +557,11 @@ function renderFooterContent(
 			: null;
 		const text = liveTps === null
 			? timerSeg
-			// : `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
-			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ${Math.round(liveTps.tps)} tok/s`)}`;
+			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
 		// Narrow widths shed the live TPS before the timer itself.
 		leftParts.push({ text, compactText: liveTps === null ? undefined : timerSeg, priority: 3 });
 		inlineTopRightParts.push(leftParts.at(-1)!);
+		builtins.timer = leftParts.at(-1)!;
 	}
 
 	// The context bar competes with the left segments for the same row:
@@ -472,8 +571,8 @@ function renderFooterContent(
 	if (segments.context) {
 		contextText = config.contextStyle === "numbers"
 			? renderContextNumbers(theme, ctx)
-			: renderContextBar(theme, ctx, width, glyphs, config.icons.mode);
-		const compact = renderContextCompact(theme, ctx, glyphs);
+			: renderContextBar(theme, ctx, width, glyphs, config.icons.mode, segments.contextBar);
+		const compact = renderContextCompact(theme, ctx, glyphs, segments.contextBar);
 		if (compact && visibleWidth(compact) < visibleWidth(contextText)) {
 			contextCompact = compact;
 		}
@@ -484,16 +583,20 @@ function renderFooterContent(
 		allParts.push({ text: contextText, compactText: contextCompact, priority: 0 });
 		// Context stays at the far right; cwd is the first item in this group.
 		inlineTopRightParts.push({ text: contextText, compactText: contextCompact, priority: 0 });
+		builtins.context = allParts.at(-1)!;
 	}
 
 	const fitted = fitSegmentsByPriority(allParts, width, theme.fg("dim", "..."));
 	const fittedContext = contextText ? fitted.pop() ?? "" : "";
-	const line1 = alignRight(fitted.filter(Boolean).join(" "), fittedContext, width, theme);
+	const contributedTop = fitContributedRow(1, "plain", builtins, contributions, width, theme);
+	const line1 = contributedTop
+		? alignContributedRow(contributedTop, width, theme)
+		: alignRight(fitted.filter(Boolean).join(" "), fittedContext, width, theme);
 
 	const inlineLeftBudget = Math.floor(width * 0.45);
 	const inlineTopLeft = fitInlineSegments(inlineTopLeftParts, inlineLeftBudget, theme);
 	const inlineRightBudget = Math.max(0, width - visibleWidth(inlineTopLeft) - (inlineTopLeft ? 1 : 0));
-	const inlineTop: InlineFooterLine = {
+	const inlineTop: InlineFooterLine = fitContributedRow(1, "inline", builtins, contributions, width, theme) ?? {
 		left: inlineTopLeft,
 		right: fitInlineSegments(inlineTopRightParts, inlineRightBudget, theme),
 	};
@@ -516,13 +619,17 @@ function renderFooterContent(
 		});
 	}
 	modelSegments.push({ text: theme.fg("mdLink", glyphs.model), priority: MODEL_ICON_PRIORITY });
-	const inlineBottom = fitInlineModelLine(
-		modelSegments,
-		renderStatsSegments(theme, totals, glyphs, segments),
-		width,
-		theme,
-	);
-	const line2 = alignRight(inlineBottom.left, inlineBottom.right, width, theme);
+	const modelBlock = joinSegments(modelSegments, MODEL_SEPARATOR, theme);
+	const stats = renderStatsSegments(theme, totals, glyphs, segments);
+	const statsParts = stats.cost ? [...stats.tokens, stats.cost] : stats.tokens;
+	builtins.model = { text: modelBlock, priority: MODEL_BUILTIN_PRIORITY };
+	builtins.tokens = { text: joinSegments(stats.tokens, STATS_SEPARATOR, theme), priority: 2 };
+	builtins.cost = { text: stats.cost?.text ?? "", priority: 1 };
+	const contributedBottom = fitContributedRow(2, "plain", builtins, contributions, width, theme);
+	const inlineBottom = contributedBottom ?? fitInlineModelLine(modelSegments, statsParts, width, theme);
+	const line2 = contributedBottom
+		? alignContributedRow(contributedBottom, width, theme)
+		: alignRight(inlineBottom.left, inlineBottom.right, width, theme);
 	const mainLines: [string, string] = [line1, line2]
 		.map((line) => truncateToWidth(line, width, theme.fg("dim", "..."))) as [string, string];
 	const extensionLines = segments.extensionStatuses
@@ -539,8 +646,11 @@ export function installFooter(
 	hooks: FooterHooks,
 ): FooterHandle {
 	let renderInline: (width: number) => InlineFooterLines | undefined = () => undefined;
+	let mounted = false;
 
 	ctx.ui.setFooter((tui, theme, footerData) => {
+		mounted = true;
+		let disposed = false;
 		hooks.setRequestRender(() => tui.requestRender());
 		const unsubBranch = footerData.onBranchChange(() => {
 			hooks.scheduleGitRefresh();
@@ -555,12 +665,16 @@ export function installFooter(
 			footerData,
 			width,
 			hooks.getLiveTps ?? (() => null),
+			hooks.getExtensionSegments ?? (() => []),
 		);
 
 		renderInline = (width) => getContent(width).inlineLines;
 
 		return {
 			dispose() {
+				if (disposed) return;
+				disposed = true;
+				mounted = false;
 				unsubBranch();
 				hooks.setRequestRender(undefined);
 				renderInline = () => undefined;
@@ -578,7 +692,7 @@ export function installFooter(
 	return {
 		renderInline: (width) => renderInline(width),
 		cleanup() {
-			ctx.ui.setFooter(undefined);
+			if (mounted) ctx.ui.setFooter(undefined);
 		},
 	};
 }

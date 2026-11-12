@@ -7,6 +7,30 @@
 - Choose how footer context usage is drawn with `contextStyle`: a bar with the percentage, or the percentage with the `used/window` tokens.
 - Blank the label Pi shows for collapsed thinking blocks with `hideThinkingLabel`, including blocks loaded from history.
 - Draw a state-coloured bar beside compact tool rows with `toolView.bar` instead of relying on a background.
+
+## [0.4.5] - 2026-11-11
+
+### Fixed
+
+- Render built-in `codemode` and `tool_search` calls in compact tool view, preserving nested-call status, output previews, image counts, truncation hints, and full results on expansion (#98).
+
+## [0.4.4] - 2026-11-06
+
+### Added
+
+- Add `footerSegments.contextBar` to hide the context progress bar and its icon while keeping the percentage and token usage.
+
+### Fixed
+
+- Restore fullscreen Copy clicks when Pi exposes the active renderer through its stable TUI reference, including after switching display modes (#93).
+
+## [0.4.3] - 2026-11-05
+
+### New Features
+
+- Let extensions contribute text to either main footer row through the public `open-tui:footer:*` events, with placement, width priorities, lifecycle cleanup, and a separate visibility setting.
+- Add opt-in compact rows for extension, MCP, and replacement tools through `toolView.extensionTools`, with generic summaries and native rendering on expansion.
+- Add search-specific compact summaries for recognized `@ff-labs/pi-fff` installations, including page match counts, matching file totals, and pagination and fallback hints.
 - Allow selected tools, such as `edit`, to keep their native rendering in compact mode through `toolView.exclude`.
 
 ### Breaking Changes
@@ -17,12 +41,14 @@
 
 - Lead the footer's second row with the model name and the thinking level, dropping the model icon and provider name before shortening either of them.
 - Group `/open-tui` settings into sections in English and Simplified Chinese, with non-selectable headings and scrolling that includes heading rows.
+- Keep feature introductions and usage examples in both READMEs, and move complete configuration and implementation details into bilingual reference documents in `docs/`.
 
 ### Fixed
 
 - Show code-block Copy labels as soon as streaming ends, without requiring a terminal resize, and hide them when streaming resumes.
 - Preserve each Copy button's code and click region across Markdown block reuse, repeated identical blocks, and mixed cached and new blocks; restore source tabs using the current block occurrence.
-- Cancel pending Copy clicks when buttons are disabled or another code-block renderer takes ownership, and suppress clipboard notifications from cleaned-up installations.
+- Cancel pending Copy clicks when buttons are disabled, and suppress clipboard notifications from cleaned-up installations.
+- Make changed-word highlighting for short edit-preview lines independent of scheduling delays, while keeping matching limits for larger diffs.
 
 ## [0.4.2] - 2026-11-03
 
