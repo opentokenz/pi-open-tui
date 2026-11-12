@@ -286,6 +286,7 @@ export interface FooterHooks {
 	scheduleGitRefresh: () => void;
 	getLiveTps?: () => LiveTps | null;
 	getExtensionSegments?: () => readonly RegisteredFooterSegment[];
+	getFast?: () => boolean;
 	canEmbedInEditor?: () => boolean;
 }
 
@@ -462,6 +463,7 @@ function renderFooterContent(
 	width: number,
 	getLiveTps: () => LiveTps | null,
 	getExtensionSegments: () => readonly RegisteredFooterSegment[],
+	fastActive: boolean,
 ): { mainLines: [string, string]; inlineLines: InlineFooterLines; extensionLines: string[] } {
 	if (width <= 0) {
 		return {
@@ -557,7 +559,7 @@ function renderFooterContent(
 			: null;
 		const text = liveTps === null
 			? timerSeg
-			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
+			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ${Math.round(liveTps.tps)} tok/s`)}`;
 		// Narrow widths shed the live TPS before the timer itself.
 		leftParts.push({ text, compactText: liveTps === null ? undefined : timerSeg, priority: 3 });
 		inlineTopRightParts.push(leftParts.at(-1)!);
@@ -602,9 +604,14 @@ function renderFooterContent(
 	};
 
 	// The model name leads the row; the icon trails it because it only helps
-	// once the reader already knows which slot the row belongs to.
+	// once the reader already knows which slot the row belongs to. An effective
+	// Fast state rides on the name so it is never shed before it.
+	const modelName = theme.fg("text", meta.model);
 	const modelSegments: PrioritizedSegment[] = [
-		{ text: theme.fg("text", meta.model), priority: MODEL_NAME_PRIORITY },
+		{
+			text: fastActive ? `${modelName} ${theme.fg("accent", glyphs.fast)}` : modelName,
+			priority: MODEL_NAME_PRIORITY,
+		},
 	];
 	if (meta.effort && meta.effort !== "off") {
 		modelSegments.push({
@@ -666,6 +673,7 @@ export function installFooter(
 			width,
 			hooks.getLiveTps ?? (() => null),
 			hooks.getExtensionSegments ?? (() => []),
+			hooks.getFast?.() ?? false,
 		);
 
 		renderInline = (width) => getContent(width).inlineLines;

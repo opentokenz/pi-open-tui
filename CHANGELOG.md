@@ -7,6 +7,13 @@
 - Choose how footer context usage is drawn with `contextStyle`: a bar with the percentage, or the percentage with the `used/window` tokens.
 - Blank the label Pi shows for collapsed thinking blocks with `hideThinkingLabel`, including blocks loaded from history.
 - Draw a state-coloured bar beside compact tool rows with `toolView.bar` instead of relying on a background.
+- Add `/fast` and the built-in priority service tier: only `provider/model` rules in
+  `fast.supportedModels` receive `service_tier: "priority"`, and the model row shows a small marker
+  while Fast is effective. Replaces the separate `pi-fast-openai` extension.
+
+### Changed
+
+- Drop the `~` prefix from the live tok/s readout in the working timer.
 
 ## [0.4.5] - 2026-11-11
 

@@ -115,6 +115,11 @@ pi -e npm:pi-open-tui
     "bar": true,
     "extensionTools": false,
     "exclude": []
+  },
+  "fast": {
+    "persistState": false,
+    "desiredActive": false,
+    "supportedModels": ["openai/gpt-5.4", "openai-codex/gpt-5.4"]
   }
 }
 ```
@@ -141,6 +146,9 @@ pi -e npm:pi-open-tui
 | `toolView.mode` | `native`、`compact` | Pi 原生卡片（默认），或带编辑/写入成功预览的紧凑调用与摘要行。只对切换后新建的行生效 |
 | `toolView.extensionTools` | `true`、`false` | 紧凑模式下，把扩展工具、MCP 工具和替换内置同名工具的扩展也折叠成通用行；默认 `false`。见[工具视图](#工具视图) |
 | `toolView.exclude` | 工具名列表 | 始终保持原生渲染的工具，例如 `["subagent_wait"]`；默认 `[]` |
+| `fast.supportedModels` | `provider/model` 规则 | 会收到优先服务等级的模型；默认 `["openai/gpt-5.4", "openai-codex/gpt-5.4"]`。见 [Fast 模式](#fast-模式) |
+| `fast.persistState` | `true`、`false` | 把每次 `/fast` 的状态写入 `fast.desiredActive`，下次会话沿用；默认 `false` |
+| `fast.desiredActive` | `true`、`false` | 会话启动时的 Fast 状态；仅在 `persistState` 开启时读取 |
 
 选择**工具视图：紧凑**后，才会显示子选项**紧凑显示扩展工具**；切回原生时隐藏该选项并保留其值。完整 JSON 默认配置、所有选项和工具排除列表见[配置参考](./docs/configuration.md#简体中文)。
 
@@ -150,7 +158,7 @@ pi -e npm:pi-open-tui
 
 上下文用量由 `contextStyle` 决定：`bar` 画出条形和百分比，`numbers` 用百分比和已用/窗口 Token 取代条形及其图标。设 `footerSegments.contextBar: false` 可去掉条形及其图标，只保留百分比和 Token 总计。两种情况下会话 Token 与费用总计都保留在第二行。
 
-第二行以模型名称和思考等级打头，并且在缩短它们之前会先去掉其他内容：先去掉模型图标和提供商名称，再让缓存命中、输出、费用、输入逐项让出空间。
+第二行以模型名称和思考等级打头，并且在缩短它们之前会先去掉其他内容：先去掉模型图标和提供商名称，再让缓存命中、输出、费用、输入逐项让出空间。Fast 生效时，模型名后会跟一个小标记；见 [Fast 模式](#fast-模式)。
 
 底栏 Token 和费用总计包含助手回复、工具报告的用量、压缩与分支摘要以及缓存预热；缓存命中率表示最近一条助手回复。其他扩展可以使用独立状态行，也可以[直接向主底栏添加内容](./docs/footer-segments.md)。
 
@@ -230,6 +238,21 @@ TPS 用服务商报告的输出 Token 除以生成时间，包含等待和停顿
 代码标签复制不含围栏的代码，保留缩进和制表符；用户消息标签复制输入原文。流式代码块会在输出结束后显示标签；普通模式和思考块保留 Pi 原生围栏。复制整条助手回复请使用 Pi 的 `/copy`。
 
 可在**常规 → 消息与工具 → 复制按钮**中开关此功能。宽度限制、代码块缓存和与其他渲染器共存的细节见[复制按钮说明](./docs/implementation.md#复制按钮行为)。
+
+## Fast 模式
+
+`/fast` 开关当前会话的优先服务等级。只有 `provider/model` 命中 `fast.supportedModels` 规则的请求才会带上 `service_tier: "priority"`；其他请求、payload 的其余内容、会话记录和费用统计都不变。Fast 生效时，模型名后会显示一个小标记。
+
+规则区分大小写，匹配完整的 provider 与模型 ID。第一个 `/` 分隔 provider 与模型 ID，模型 ID 本身可含 `/` 分段，`*` 只在单个分段内匹配：
+
+- `openai/gpt-5.4` —— 精确匹配这一对；内置默认值，与 `openai-codex/gpt-5.4` 一起
+- `relay/gpt-*` —— `relay` 提供商下的任意 `gpt-*` 模型
+- `*/gpt-*` —— 显式写了 provider 通配符，因此任意提供商的这些模型都匹配
+- `relay/team/gpt-*` —— `relay` 提供商的 `team/gpt-*` 模型；通配符不跨斜杠
+
+在未配置的模型上打开 Fast 会保留开启状态并给出警告，切到已配置的模型后即可生效。`fast.persistState: true` 时，每次 `/fast` 都会把状态写入 `fast.desiredActive`，下次会话按该状态启动。
+
+Fast 原本是独立的 `pi-fast-openai` 扩展。使用内置命令前请先移除它，因为两者都会注册 `/fast`。给第三方端点加规则前，请先确认它接受 `service_tier: "priority"`。
 
 ## 文档
 

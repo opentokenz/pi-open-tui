@@ -1064,6 +1064,18 @@ test("host name uses matching glyph in nerd and ascii modes", () => {
 	assert.ok(nerdOut.includes(resolveGlyphs("nerd").host), `nerd glyph missing\n${nerdOut}`);
 });
 
+test("the model row marks an effective Fast state with a trailing glyph", () => {
+	let fast = true;
+	const { component } = footerFixture({ hooks: { getFast: () => fast } });
+	const marked = component.render(80)[1]!;
+	assert.ok(marked.includes(`gpt-5 ${resolveGlyphs("ascii").fast}`), `fast glyph missing\n${marked}`);
+
+	fast = false;
+	const plain = component.render(80)[1]!;
+	assert.ok(plain.includes("gpt-5"), plain);
+	assert.ok(!plain.includes(resolveGlyphs("ascii").fast), `fast glyph should be gone\n${plain}`);
+});
+
 // Real SGR codes keep the width maths honest: visibleWidth() must ignore them.
 const styledTheme = {
 	fg: (color: string, text: string) => {
@@ -1171,9 +1183,9 @@ test("working timer shows live TPS gated by its footer setting and sheds it firs
 	config.footerSegments.hostname = false;
 	const line = (width = 120) => component.render(width)[0]!;
 
-	assert.match(line(), /o \S+ · <accent>> ~54 tok\/s/);
+	assert.match(line(), /o \S+ · <accent>> 54 tok\/s/);
 	liveTps = { tps: 53.5, stale: true };
-	assert.match(line(), /o \S+ · <dim>> ~54 tok\/s/);
+	assert.match(line(), /o \S+ · <dim>> 54 tok\/s/);
 	liveTps = { tps: 53.5, stale: false };
 	const narrow = line(45);
 	assert.doesNotMatch(narrow, /working/);
@@ -1185,7 +1197,7 @@ test("working timer shows live TPS gated by its footer setting and sheds it firs
 	config.footerSegments.liveTps = true;
 	// The footer switch is independent of the telemetry notification settings.
 	config.telemetry.enabled = false;
-	assert.match(line(), /~54 tok\/s/);
+	assert.match(line(), /54 tok\/s/);
 	config.telemetry.enabled = true;
 	liveTps = null;
 	assert.doesNotMatch(line(), /tok\/s/);

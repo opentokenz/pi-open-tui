@@ -115,6 +115,11 @@ Example configuration:
     "bar": true,
     "extensionTools": false,
     "exclude": []
+  },
+  "fast": {
+    "persistState": false,
+    "desiredActive": false,
+    "supportedModels": ["openai/gpt-5.4", "openai-codex/gpt-5.4"]
   }
 }
 ```
@@ -141,6 +146,9 @@ Key options:
 | `toolView.mode` | `native`, `compact` | Pi's native cards (default) or compact call/summary rows with successful edit/write previews. Applies to rows created after the change |
 | `toolView.extensionTools` | `true`, `false` | In compact mode, also collapses extension, MCP, and replacement tools into generic rows; defaults to `false`. See [Tool view](#tool-view) |
 | `toolView.exclude` | Tool names | Tools that always keep their native rendering, for example `["subagent_wait"]`; defaults to `[]` |
+| `fast.supportedModels` | `provider/model` rules | Models that receive the priority service tier; defaults to `["openai/gpt-5.4", "openai-codex/gpt-5.4"]`. See [Fast mode](#fast-mode) |
+| `fast.persistState` | `true`, `false` | Saves every `/fast` change to `fast.desiredActive`, so the next session starts with the same state; defaults to `false` |
+| `fast.desiredActive` | `true`, `false` | Fast state at session start; only read when `persistState` is on |
 
 Selecting **Tool view: Compact** reveals **Compact extension tools** as a child setting. Switching back to Native hides it and retains its value. The [configuration reference](./docs/configuration.md#english) contains the complete JSON defaults, every option, and tool exclusions.
 
@@ -150,7 +158,7 @@ The header provides model and project context with command hints. The two main f
 
 The context usage follows `contextStyle`: `bar` draws the bar with the percentage, `numbers` replaces the bar and its icon with the percentage and the `used/window` tokens. `footerSegments.contextBar: false` drops the bar and its icon while keeping the percentage and the token totals. Session token and cost totals stay in the second row either way.
 
-The second row leads with the model name and the thinking level, and it drops everything else before shortening either of them: the model icon and the provider name go first, then the cache hit, output, cost, and input totals give up space one at a time.
+The second row leads with the model name and the thinking level, and it drops everything else before shortening either of them: the model icon and the provider name go first, then the cache hit, output, cost, and input totals give up space one at a time. While Fast is effective a small marker follows the model name; see [Fast mode](#fast-mode).
 
 Footer token and cost totals include assistant responses, tool-reported usage, compaction and branch summaries, and cache warming. The cache-hit percentage describes the latest assistant response. Other extensions can use separate status rows or [contribute text directly to the main footer](./docs/footer-segments.md).
 
@@ -230,6 +238,21 @@ In fullscreen mode (Pi's `tuiMode: "fullscreen"`), completed code blocks show a 
 Code labels copy code without fences, preserving indentation and tabs. User-message labels copy the original message. Streaming code blocks gain their label when streaming finishes; regular mode and thinking blocks keep Pi's plain fences. Use Pi's `/copy` to copy a whole assistant reply.
 
 Toggle **General → Messages & tools → Copy buttons** to enable or disable this feature. [Copy-button details](./docs/implementation.md#copy-button-behavior) cover width limits, cached blocks, and interaction with other renderers.
+
+## Fast mode
+
+`/fast` toggles the priority service tier for the current session. Only requests whose `provider/model` matches a rule in `fast.supportedModels` get `service_tier: "priority"`; every other request, and everything else in the payload, history, and cost accounting, stays untouched. While Fast is effective the model row shows a small marker after the model name.
+
+Rules are case-sensitive and match the complete provider and model ID. The first `/` separates the provider from the model ID, model IDs may contain further `/` components, and `*` matches within one component only:
+
+- `openai/gpt-5.4` — that exact pair; the built-in default, together with `openai-codex/gpt-5.4`
+- `relay/gpt-*` — any `gpt-*` model on the `relay` provider
+- `*/gpt-*` — those model IDs on any provider, because the provider wildcard was configured explicitly
+- `relay/team/gpt-*` — the `relay` provider's `team/gpt-*` models; the wildcard crosses neither slash
+
+Turning Fast on for a model that is not configured keeps the request flag on and warns, so switching to a configured model can activate it later. With `fast.persistState: true` every `/fast` change is saved as `fast.desiredActive`, and the next session starts with that state.
+
+Fast used to be the separate `pi-fast-openai` package. Remove it before relying on the built-in command, because both register `/fast`. Add a third-party rule only after checking that the endpoint accepts `service_tier: "priority"`.
 
 ## Documentation
 

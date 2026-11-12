@@ -9,6 +9,7 @@ import { emptyGitStatus, readGitStatus } from "./git.ts";
 import { readRuntimeInfo } from "./runtime.ts";
 import { SessionLifecycle } from "./session-lifecycle.ts";
 import { registerSettingsCommand } from "./settings-command.ts";
+import { getFastState, injectPriority, type FastModelIdentity, validateModelPatterns } from "./fast.ts";
 import { formatTurnTelemetry, TurnTelemetryTracker } from "./telemetry.ts";
 import { registerToolView } from "./tool-view.ts";
 import {
@@ -37,6 +38,11 @@ function isTuiContext(ctx: ExtensionContext): boolean {
 	return ctx.hasUI && ctx.mode === "tui";
 }
 
+function getContextModel(ctx: ExtensionContext): FastModelIdentity | undefined {
+	const model = ctx.model;
+	return model ? { provider: model.provider, id: model.id } : undefined;
+}
+
 export default function (pi: ExtensionAPI) {
 	const sessionLifecycle = new SessionLifecycle();
 	const state: FooterState = createInitialState();
@@ -44,6 +50,8 @@ export default function (pi: ExtensionAPI) {
 
 	let config: OpenTuiConfig = structuredClone(DEFAULT_CONFIG);
 	let configLoaded = false;
+	// Fast is a session toggle that only feeds `service_tier` into supported requests.
+	let fastRequested = false;
 	let active = false;
 	let lastCtx: ExtensionContext | undefined;
 	let requestFooterRender: (() => void) | undefined;
@@ -130,6 +138,7 @@ export default function (pi: ExtensionAPI) {
 					},
 					getLiveTps: () => turnTelemetry.getLiveTps(),
 					getExtensionSegments: footerSegments.getSegments,
+					getFast: () => getFastState(fastRequested, getContextModel(ctx), config.fast.supportedModels).effective,
 					canEmbedInEditor: () => editor?.isFramed() ?? false,
 				},
 			);
@@ -241,6 +250,10 @@ export default function (pi: ExtensionAPI) {
 		ensureConfigExists();
 		config = loadConfig((msg, level) => ctx.ui.notify(msg, level));
 		configLoaded = true;
+		fastRequested = config.fast.persistState && config.fast.desiredActive;
+		for (const pattern of validateModelPatterns(config.fast.supportedModels).invalid) {
+			ctx.ui.notify(`open-tui fast: invalid supportedModels rule "${pattern}"; it never matches.`, "warning");
+		}
 		clearPeekLabel(ctx);
 
 		applyUi(ctx);
@@ -252,10 +265,39 @@ export default function (pi: ExtensionAPI) {
 		sessionLifecycle.shutdown();
 		stopWorkingTimer();
 		footerSegments.deactivate();
+		fastRequested = false;
 		if (active) {
 			uninstallUi(ctx);
 		}
 		lastCtx = undefined;
+	});
+
+	pi.registerCommand("fast", {
+		description: "Toggle the priority service tier for configured models",
+		handler: async (_args, ctx) => {
+			fastRequested = !fastRequested;
+			if (config.fast.persistState) {
+				const previous = config.fast.desiredActive;
+				config.fast.desiredActive = fastRequested;
+				if (!saveConfig(config)) {
+					config.fast.desiredActive = previous;
+					ctx.ui.notify("open-tui could not save the Fast state to open-tui.json.", "warning");
+				}
+			}
+			requestFooterRender?.();
+			const fast = getFastState(fastRequested, getContextModel(ctx), config.fast.supportedModels);
+			if (fast.requested && !fast.supported) {
+				ctx.ui.notify("Fast is on, but the current provider/model is not listed in fast.supportedModels.", "warning");
+				return;
+			}
+			ctx.ui.notify(`Fast ${fast.requested ? "on" : "off"}.`, "info");
+		},
+	});
+
+	// Only the provider payload changes: requests for other models stay untouched.
+	pi.on("before_provider_request", (event, ctx) => {
+		const payload = injectPriority(event.payload, fastRequested, getContextModel(ctx), config.fast.supportedModels);
+		return payload === event.payload ? undefined : payload;
 	});
 
 	pi.on("agent_start", (event, _ctx) => {

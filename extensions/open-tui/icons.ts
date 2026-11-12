@@ -15,6 +15,8 @@ export interface IconGlyphs {
 	cacheHit: string;
 	cost: string;
 	speed: string;
+	/** Marker for the effective Fast state next to the model name. */
+	fast: string;
 	latency: string;
 	stall: string;
 	extensions: string;
@@ -49,6 +51,7 @@ const NERD_GLYPHS: IconGlyphs = {
 	cacheHit: "",
 	cost: "",
 	speed: "󰓅",
+	fast: "\u{f0e7}",
 	latency: "",
 	stall: "",
 	extensions: "",
@@ -84,6 +87,7 @@ const ASCII_GLYPHS: IconGlyphs = {
 	cacheHit: "c",
 	cost: "$",
 	speed: ">",
+	fast: "F",
 	latency: "~",
 	stall: "!",
 	extensions: "&",
@@ -123,6 +127,7 @@ const UNICODE_GLYPHS: IconGlyphs = {
 	cacheHit: "💾",
 	cost: "$",
 	speed: "⚡",
+	fast: "⚡",
 	latency: "⌛",
 	stall: "⚠",
 	extensions: "🔌",

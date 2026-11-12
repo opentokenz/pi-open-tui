@@ -59,6 +59,15 @@ export interface ToolViewConfig extends ToolViewBar {
 	exclude: string[];
 }
 
+export interface FastConfig {
+	/** Save `desiredActive` to open-tui.json whenever `/fast` changes it. */
+	persistState: boolean;
+	/** Fast requested at session start; only read when `persistState` is on. */
+	desiredActive: boolean;
+	/** `provider/model` rules that accept `service_tier: "priority"`. */
+	supportedModels: string[];
+}
+
 export interface OpenTuiConfig {
 	enabled: boolean;
 	/** Override Pi's header with the open-tui header. When false, the header slot is left to Pi or another extension. */
@@ -79,6 +88,7 @@ export interface OpenTuiConfig {
 	telemetry: TelemetryConfig;
 	thinkingPeek: ThinkingPeekConfig;
 	toolView: ToolViewConfig;
+	fast: FastConfig;
 }
 
 export const DEFAULT_CONFIG: OpenTuiConfig = {
@@ -129,6 +139,11 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		extensionTools: false,
 		exclude: [],
 	},
+	fast: {
+		persistState: false,
+		desiredActive: false,
+		supportedModels: ["openai/gpt-5.4", "openai-codex/gpt-5.4"],
+	},
 };
 
 export function getConfigPath(): string {
@@ -149,6 +164,19 @@ function normalizeToolView(value: unknown): ToolViewConfig {
 		bar: source.bar !== false,
 		extensionTools: source.extensionTools === true,
 		exclude: Array.isArray(source.exclude) ? source.exclude.filter((name): name is string => typeof name === "string") : [],
+	};
+}
+
+function normalizeFast(value: unknown): FastConfig {
+	const source = typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Partial<Record<keyof FastConfig, unknown>>)
+		: {};
+	return {
+		persistState: source.persistState === true,
+		desiredActive: source.desiredActive === true,
+		supportedModels: Array.isArray(source.supportedModels)
+			? source.supportedModels.filter((pattern): pattern is string => typeof pattern === "string")
+			: [...DEFAULT_CONFIG.fast.supportedModels],
 	};
 }
 
@@ -244,6 +272,7 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 			config.thinkingPeek.lines = normalizeThinkingPeekLines(config.thinkingPeek.lines);
 		}
 		config.toolView = normalizeToolView(config.toolView);
+		config.fast = normalizeFast(config.fast);
 		return config;
 	} catch (err) {
 		notify?.(`open-tui config parse error: ${err instanceof Error ? err.message : String(err)}`, "warning");
