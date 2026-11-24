@@ -15,6 +15,22 @@
 
 - Drop the `~` prefix from the live tok/s readout in the working timer.
 
+## [0.4.7] - 2026-11-20
+
+### Fixed
+
+- Use `└` instead of `⎿` for the tool result glyph so code-mode alignment stays correct (#104).
+
+## [0.4.6] - 2026-11-14
+
+### Added
+
+- Add a clickable Copy button to nonempty input drafts in fullscreen mode, including the full text of folded pastes (#103).
+
+### Fixed
+
+- Refresh footer Git status after tool execution so branch and working-tree changes appear during agent turns (#101).
+
 ## [0.4.5] - 2026-11-11
 
 ### Fixed

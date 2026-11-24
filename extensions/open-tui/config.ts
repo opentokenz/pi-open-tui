@@ -75,7 +75,7 @@ export interface OpenTuiConfig {
 	inlineFooter: boolean;
 	/** Footer context usage: a bar or the token totals. */
 	contextStyle: ContextStyle;
-	/** Clickable `Copy` labels on code blocks and user messages (fullscreen mode only). */
+	/** Clickable `Copy` labels on code blocks, user messages, and nonempty editor drafts (fullscreen mode only). */
 	copyButtons: boolean;
 	/** Blank the label Pi shows for collapsed thinking blocks. */
 	hideThinkingLabel: boolean;

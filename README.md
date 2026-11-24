@@ -1,7 +1,5 @@
 # pi-open-tui
 
-[![omp status](https://omppackages.com/badge/pi-open-tui.svg)](https://omppackages.com/packages/pi-open-tui)
-
 **English** | [简体中文](./README.zh-CN.md)
 
 A polished terminal interface for the [Pi](https://pi.dev) coding agent.
@@ -17,7 +15,7 @@ A polished terminal interface for the [Pi](https://pi.dev) coding agent.
 - **Turn telemetry** with generation speed, time to first token, duration, stalls, tokens, and cost rate
 - **Thinking peek** with a live preview of hidden reasoning while the model works
 - **Compact tool view** with edit/write previews and optional support for extension and MCP tools
-- **Fullscreen Copy buttons** for code blocks and user messages
+- **Fullscreen Copy buttons** for code blocks, user messages, and input drafts
 - **Interactive settings** in English and Simplified Chinese through `/open-tui`
 
 ## Requirements
@@ -160,6 +158,8 @@ The context usage follows `contextStyle`: `bar` draws the bar with the percentag
 
 The second row leads with the model name and the thinking level, and it drops everything else before shortening either of them: the model icon and the provider name go first, then the cache hit, output, cost, and input totals give up space one at a time. While Fast is effective a small marker follows the model name; see [Fast mode](#fast-mode).
 
+Git status refreshes after tool execution, including commits on the current branch. Rapid tool activity is combined into periodic refreshes, with any pending refresh expedited when the agent run ends.
+
 Footer token and cost totals include assistant responses, tool-reported usage, compaction and branch summaries, and cache warming. The cache-hit percentage describes the latest assistant response. Other extensions can use separate status rows or [contribute text directly to the main footer](./docs/footer-segments.md).
 
 Enable **Footer in editor border** to move the two main rows into the editor's top and bottom borders. Extension status rows remain below the editor. Compatible editors keep their input behavior, completion, and ghost text; editors that cannot be framed retain a separate footer. See [editor compatibility and layout](./docs/implementation.md#editor-and-layout) for the integration boundaries.
@@ -236,6 +236,8 @@ In fullscreen mode (Pi's `tuiMode: "fullscreen"`), completed code blocks show a 
 ```
 
 Code labels copy code without fences, preserving indentation and tabs. User-message labels copy the original message. Streaming code blocks gain their label when streaming finishes; regular mode and thinking blocks keep Pi's plain fences. Use Pi's `/copy` to copy a whole assistant reply.
+
+A nonempty draft in a compatible input editor also gets a `[Copy]` button in a free border gap, preferring the bottom border and falling back to the top. It copies the complete draft, including expanded folded pastes, without moving the cursor or changing focus. Footer, working-status, and scroll information stay intact; the button is hidden if neither border has enough space.
 
 Toggle **General → Messages & tools → Copy buttons** to enable or disable this feature. [Copy-button details](./docs/implementation.md#copy-button-behavior) cover width limits, cached blocks, and interaction with other renderers.
 
